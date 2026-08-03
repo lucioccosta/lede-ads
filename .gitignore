@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE / OS / agent tooling
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.agents/
+.claude/
+**/.agents/
+**/.claude/
+
+# Android
+apps/edge-android/.gradle/
+apps/edge-android/build/
+apps/edge-android/app/build/
+apps/edge-android/local.properties
+*.apk
+*.aab
+
+# Logs / coverage
+coverage/
+*.log
+npm-debug.log*
+
+# Misc
+.turbo/
+apps/cloud-api/uploads/

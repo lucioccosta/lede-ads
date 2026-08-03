@@ -1,0 +1,304 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  lede_admin
+  lede_operator
+  client_viewer
+  client_approver
+}
+
+enum MediaStatus {
+  draft
+  pending_approval
+  approved
+  rejected
+}
+
+enum MediaType {
+  image
+  video
+}
+
+enum DeviceStatus {
+  online
+  offline
+  pairing
+  unknown
+}
+
+enum DeviceOrientation {
+  landscape
+  portrait
+}
+
+enum DeviceCommandType {
+  resync
+  reboot
+  screenshot
+}
+
+enum DeviceCommandStatus {
+  pending
+  done
+  failed
+}
+
+enum ScreenTypeMode {
+  standard
+  condo_split
+}
+
+enum ScheduleChannel {
+  full
+  condo
+  ads
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  document  String?
+  email     String?
+  phone     String?
+  isCondo   Boolean  @default(false)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  plans            Plan[]
+  media            Media[]
+  scenes           Scene[]
+  schedules        Schedule[]
+  devices          Device[]
+  allowedScreenTypes ClientScreenType[]
+  changeLogs       ChangeLog[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole
+  clientId     String?
+  client       Client?  @relation(fields: [clientId], references: [id])
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  changeLogs ChangeLog[]
+}
+
+model Plan {
+  id                 String   @id @default(cuid())
+  clientId           String
+  client             Client   @relation(fields: [clientId], references: [id])
+  name               String
+  samplesPerDay      Int
+  sampleDurationSec  Int      @default(10)
+  startsAt           DateTime
+  endsAt             DateTime?
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  schedules Schedule[]
+}
+
+model ScreenType {
+  id          String         @id @default(cuid())
+  name        String
+  slug        String         @unique
+  description String?
+  mode        ScreenTypeMode @default(standard)
+  active      Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  layouts Layout[]
+  devices Device[]
+  clients ClientScreenType[]
+}
+
+model ClientScreenType {
+  id           String     @id @default(cuid())
+  clientId     String
+  client       Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  screenTypeId String
+  screenType   ScreenType @relation(fields: [screenTypeId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([clientId, screenTypeId])
+}
+
+model Layout {
+  id           String      @id @default(cuid())
+  name         String
+  screenType   String
+  screenTypeId String?
+  screenTypeRef ScreenType? @relation(fields: [screenTypeId], references: [id])
+  width        Int
+  height       Int
+  zonesJson    Json
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  scenes Scene[]
+}
+
+model Media {
+  id            String      @id @default(cuid())
+  clientId      String
+  client        Client      @relation(fields: [clientId], references: [id])
+  name          String
+  type          MediaType
+  status        MediaStatus @default(draft)
+  mimeType      String
+  url           String
+  checksum      String
+  durationMs    Int         @default(10000)
+  fileSize      Int         @default(0)
+  rejectionNote String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  sceneZones SceneZone[]
+  proofs     ProofOfPlay[]
+}
+
+model Scene {
+  id         String   @id @default(cuid())
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id])
+  layoutId   String
+  layout     Layout   @relation(fields: [layoutId], references: [id])
+  name       String
+  durationMs Int      @default(10000)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  zones     SceneZone[]
+  schedules Schedule[]
+  proofs    ProofOfPlay[]
+}
+
+model SceneZone {
+  id      String @id @default(cuid())
+  sceneId String
+  scene   Scene  @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  zoneKey String
+  mediaId String?
+  media   Media? @relation(fields: [mediaId], references: [id])
+
+  @@unique([sceneId, zoneKey])
+}
+
+model Device {
+  id                String            @id @default(cuid())
+  name              String
+  pairingCode       String?           @unique
+  deviceToken       String?           @unique
+  status            DeviceStatus      @default(unknown)
+  orientation       DeviceOrientation @default(landscape)
+  timezone          String            @default("America/Manaus")
+  clientId          String?
+  client            Client?           @relation(fields: [clientId], references: [id])
+  screenTypeId      String?
+  screenType        ScreenType?       @relation(fields: [screenTypeId], references: [id])
+  lastHeartbeatAt   DateTime?
+  lastScreenshotUrl String?
+  appVersion        String?
+  freeStorageBytes  BigInt?
+  ipAddress         String?
+  screenWidth       Int?
+  screenHeight      Int?
+  locationLabel     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  schedules Schedule[]
+  proofs    ProofOfPlay[]
+  commands  DeviceCommand[]
+}
+
+model DeviceCommand {
+  id        String              @id @default(cuid())
+  deviceId  String
+  device    Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type      DeviceCommandType
+  status    DeviceCommandStatus @default(pending)
+  error     String?
+  createdAt DateTime            @default(now())
+  ackedAt   DateTime?
+
+  @@index([deviceId, status, createdAt])
+}
+
+model Schedule {
+  id        String          @id @default(cuid())
+  name      String
+  clientId  String
+  client    Client          @relation(fields: [clientId], references: [id])
+  sceneId   String
+  scene     Scene           @relation(fields: [sceneId], references: [id])
+  planId    String?
+  plan      Plan?           @relation(fields: [planId], references: [id])
+  deviceId  String?
+  device    Device?         @relation(fields: [deviceId], references: [id])
+  channel   ScheduleChannel @default(full)
+  priority  Int             @default(0)
+  daysOfWeek Int[]
+  startTime String
+  endTime   String
+  startsAt  DateTime?
+  endsAt    DateTime?
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model ProofOfPlay {
+  id        String   @id @default(cuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id])
+  sceneId   String
+  scene     Scene    @relation(fields: [sceneId], references: [id])
+  mediaId   String
+  media     Media    @relation(fields: [mediaId], references: [id])
+  startedAt DateTime
+  endedAt   DateTime
+  checksum  String
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, startedAt])
+  @@index([mediaId, startedAt])
+}
+
+enum ChangeLogAction {
+  condo_media_changed
+  media_uploaded
+  media_reviewed
+}
+
+model ChangeLog {
+  id          String          @id @default(cuid())
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      ChangeLogAction
+  summary     String
+  detailsJson Json?
+  createdAt   DateTime        @default(now())
+
+  @@index([clientId, createdAt])
+}
