@@ -83,7 +83,13 @@ export default function PortalDevicesPage() {
                 <p>
                   Orientação:{" "}
                   <span className="text-foreground">
-                    {d.orientation === "portrait" ? "Retrato" : "Paisagem"}
+                    {d.orientation === "portrait"
+                      ? "Retrato (90°)"
+                      : d.orientation === "landscape_reverse"
+                        ? "Paisagem invertida (180°)"
+                        : d.orientation === "portrait_reverse"
+                          ? "Retrato invertido (270°)"
+                          : "Paisagem (0°)"}
                   </span>
                 </p>
                 <p>

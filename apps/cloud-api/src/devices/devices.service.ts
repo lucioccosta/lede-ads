@@ -109,10 +109,9 @@ export class DevicesService {
         name: dto.name,
         locationLabel: dto.locationLabel,
         timezone: dto.timezone || 'America/Manaus',
-        orientation:
-          dto.orientation === 'portrait'
-            ? DeviceOrientation.portrait
-            : DeviceOrientation.landscape,
+        orientation: dto.orientation
+          ? (dto.orientation as DeviceOrientation)
+          : DeviceOrientation.landscape,
         clientId: dto.clientId ?? null,
         screenTypeId: dto.screenTypeId ?? null,
         pairingCode,
@@ -146,9 +145,7 @@ export class DevicesService {
         orientation:
           dto.orientation === undefined
             ? undefined
-            : dto.orientation === 'portrait'
-              ? DeviceOrientation.portrait
-              : DeviceOrientation.landscape,
+            : (dto.orientation as DeviceOrientation),
         clientId: dto.clientId === undefined ? undefined : dto.clientId,
         screenTypeId:
           dto.screenTypeId === undefined ? undefined : dto.screenTypeId,

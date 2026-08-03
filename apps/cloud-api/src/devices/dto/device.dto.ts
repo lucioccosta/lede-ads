@@ -22,8 +22,12 @@ export class CreateDeviceDto {
   timezone?: string;
 
   @IsOptional()
-  @IsIn(['landscape', 'portrait'])
-  orientation?: 'landscape' | 'portrait';
+  @IsIn(['landscape', 'portrait', 'landscape_reverse', 'portrait_reverse'])
+  orientation?:
+    | 'landscape'
+    | 'portrait'
+    | 'landscape_reverse'
+    | 'portrait_reverse';
 
   @IsOptional()
   @ValidateIf((_o, v) => v !== null)
@@ -50,8 +54,12 @@ export class UpdateDeviceDto {
   timezone?: string;
 
   @IsOptional()
-  @IsIn(['landscape', 'portrait'])
-  orientation?: 'landscape' | 'portrait';
+  @IsIn(['landscape', 'portrait', 'landscape_reverse', 'portrait_reverse'])
+  orientation?:
+    | 'landscape'
+    | 'portrait'
+    | 'landscape_reverse'
+    | 'portrait_reverse';
 
   @IsOptional()
   @ValidateIf((_o, v) => v !== null)

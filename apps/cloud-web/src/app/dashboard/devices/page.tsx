@@ -38,7 +38,11 @@ type Device = {
   locationLabel: string | null;
   pairingCode: string | null;
   timezone: string;
-  orientation: "landscape" | "portrait";
+  orientation:
+    | "landscape"
+    | "portrait"
+    | "landscape_reverse"
+    | "portrait_reverse";
   clientId: string | null;
   screenTypeId: string | null;
   client?: { id: string; name: string } | null;
@@ -80,9 +84,18 @@ const TIMEZONES = [
 ];
 
 const ORIENTATIONS = [
-  { value: "landscape", label: "Paisagem" },
-  { value: "portrait", label: "Retrato" },
+  { value: "landscape", label: "Paisagem (0°)" },
+  { value: "portrait", label: "Retrato (90°)" },
+  { value: "landscape_reverse", label: "Paisagem invertida (180°)" },
+  { value: "portrait_reverse", label: "Retrato invertido (270°)" },
 ] as const;
+
+type DeviceOrientation = (typeof ORIENTATIONS)[number]["value"];
+
+const orientationLabel = Object.fromEntries(
+  ORIENTATIONS.map((o) => [o.value, o.label]),
+) as Record<DeviceOrientation, string>;
+
 
 const commandLabel: Record<string, string> = {
   resync: "Re-sync",
@@ -104,9 +117,7 @@ export default function DevicesPage() {
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [timezone, setTimezone] = useState("America/Manaus");
-  const [orientation, setOrientation] = useState<"landscape" | "portrait">(
-    "landscape",
-  );
+  const [orientation, setOrientation] = useState<DeviceOrientation>("landscape");
   const [clientId, setClientId] = useState("none");
   const [screenTypeId, setScreenTypeId] = useState("none");
   const [createdCode, setCreatedCode] = useState<string | null>(null);
@@ -234,19 +245,14 @@ export default function DevicesPage() {
     }
   }
 
-  async function updateOrientation(
-    deviceId: string,
-    next: "landscape" | "portrait",
-  ) {
+  async function updateOrientation(deviceId: string, next: DeviceOrientation) {
     try {
       await api(`/devices/${deviceId}`, {
         method: "PATCH",
         body: JSON.stringify({ orientation: next }),
       });
       toast.success(
-        next === "portrait"
-          ? "Orientação: retrato — peça Re-sync no device"
-          : "Orientação: paisagem — peça Re-sync no device",
+        `${orientationLabel[next]} — peça Re-sync no device`,
       );
       await load();
     } catch (err) {
@@ -376,11 +382,16 @@ export default function DevicesPage() {
                   <Label>Orientação</Label>
                   <Select
                     value={orientation}
-                    onValueChange={(v) =>
-                      setOrientation(
-                        v === "portrait" ? "portrait" : "landscape",
-                      )
-                    }
+                    onValueChange={(v) => {
+                      if (
+                        v === "portrait" ||
+                        v === "landscape" ||
+                        v === "landscape_reverse" ||
+                        v === "portrait_reverse"
+                      ) {
+                        setOrientation(v);
+                      }
+                    }}
                     items={Object.fromEntries(
                       ORIENTATIONS.map((o) => [o.value, o.label]),
                     )}
@@ -609,7 +620,12 @@ export default function DevicesPage() {
                     <Select
                       value={d.orientation || "landscape"}
                       onValueChange={(v) => {
-                        if (v === "portrait" || v === "landscape") {
+                        if (
+                          v === "portrait" ||
+                          v === "landscape" ||
+                          v === "landscape_reverse" ||
+                          v === "portrait_reverse"
+                        ) {
                           void updateOrientation(d.id, v);
                         }
                       }}

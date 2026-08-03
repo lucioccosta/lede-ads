@@ -36,6 +36,8 @@ enum DeviceStatus {
 enum DeviceOrientation {
   landscape
   portrait
+  landscape_reverse
+  portrait_reverse
 }
 
 enum DeviceCommandType {
