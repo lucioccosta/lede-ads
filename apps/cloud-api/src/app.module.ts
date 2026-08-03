@@ -16,6 +16,8 @@ import { ScreenTypesModule } from './screen-types/screen-types.module';
 import { UsersModule } from './users/users.module';
 import { HistoryModule } from './history/history.module';
 import { StorageModule } from './storage/storage.module';
+import { CapacityModule } from './capacity/capacity.module';
+import { DeviceGroupsModule } from './device-groups/device-groups.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { StorageModule } from './storage/storage.module';
     AuthModule,
     ClientsModule,
     UsersModule,
+    CapacityModule,
+    DeviceGroupsModule,
     PlansModule,
     ScreenTypesModule,
     LayoutsModule,

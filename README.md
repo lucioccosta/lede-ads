@@ -2,7 +2,7 @@
 
 Plataforma **Cloud + Edge** para propagandas em TVs e telas LED (elevadores, lobbies, etc.).
 
-- **Cloud Ops (LEDE):** operação completa — clientes, planos, layouts, mídias, cenas, agendas, telas e monitoramento  
+- **Cloud Ops (LEDE):** operação completa — clientes, planos, grupos de telas, capacidade, layouts, mídias, cenas, agendas, telas e monitoramento  
 - **Portal do cliente:** envio/aprovação de criativos, amostragem e histórico  
 - **Portal do condomínio:** troca do aviso na área exclusiva da tela (sem editar cenas/agendas)  
 - **Edge Android:** player kiosk com sync, cache offline e proof-of-play  
@@ -73,7 +73,7 @@ URL pública de um objeto:
 
 Credenciais (`S3_ACCESS_KEY` / `S3_SECRET_KEY`) só em `.env` / Dokploy — nunca no Git.  
 Fallback: `STORAGE_DRIVER=local` → pasta `apps/cloud-api/uploads/`.  
-Detalhes: [docs/STORAGE.md](docs/STORAGE.md).
+Detalhes: [docs/STORAGE.md](docs/STORAGE.md) · Inventário ads: [docs/CAPACITY.md](docs/CAPACITY.md).
 
 ### Logins demo (após seed)
 
@@ -98,9 +98,10 @@ Pairing Edge demo:
 
 Usuários `lede_admin` / `lede_operator` acessam `/dashboard`:
 
-- Clientes (flag **é condomínio**), planos, tipos de tela, layouts  
+- Clientes (flag **é condomínio**), planos, **grupos de telas**, **capacidade**  
+- Tipos de tela, layouts  
 - Mídias, cenas, agendamentos (canais `full` / `condo` / `ads`)  
-- Telas / monitoramento (heartbeat, screenshot, re-sync, reboot)  
+- Telas / monitoramento (heartbeat, screenshot, re-sync, reboot, re-parear)  
 - Amostragem (proof-of-play)  
 - Histórico global de alterações (filtro por cliente)  
 
@@ -131,10 +132,15 @@ Cada usuário pode **alterar a própria senha** no menu da conta (sidebar).
 | `ClientScreenType` | Tipos de tela liberados para o cliente/condomínio |
 | `Layout.zonesJson` | Zonas com `role`: `full` \| `condo` \| `ads` |
 | `Schedule.channel` | `full` \| `condo` \| `ads` |
-| `Device.orientation` | `landscape` \| `portrait` |
+| `Device.orientation` | `landscape` \| `portrait` \| `*_reverse` |
 | `Device.clientId` | Vincula a tela ao condomínio |
+| `Device.groupId` | Vincula a tela a um **grupo** (inventário de ads) |
+| `DeviceGroup` | Telas de um condomínio; base da capacidade e agendas ads |
+| `Plan.months` + grupos | Produto comercial `10s × amostragens/dia × meses` |
 
-No Edge, agendas `condo` e `ads` do mesmo device são mescladas na playlist (área exclusiva + anúncios).
+No Edge (`condo_split`), a playlist mescla zona condo + rodízio igual entre anúncios do grupo; slots não vendidos usam a cena house **“Anuncie AQUI”**.
+
+Detalhes: [docs/CAPACITY.md](docs/CAPACITY.md).
 
 ---
 
@@ -158,10 +164,12 @@ Prefixo global: `/api`.
 |------|----------------------|
 | Auth | `POST /auth/login`, `GET /auth/me`, `PATCH /auth/password` |
 | Clientes / usuários | CRUD clientes; usuários do portal por cliente |
+| Grupos / capacidade | CRUD `/device-groups`; `GET /capacity` |
+| Planos | CRUD com `months` + `groupIds` (valida overbook) |
 | Mídias / uploads | CRUD mídia, review, `POST /uploads` |
-| Cenas / agendas | CRUD LEDE; portal condo: `GET /scenes/condo/active` + `PATCH` só zonas condo |
-| Devices | pairing, monitoring, comandos, `GET /devices/mine` |
-| Edge | `/edge/pair`, `/edge/sync`, heartbeat, PoP, screenshot |
+| Cenas / agendas | CRUD LEDE; portal condo: `GET /scenes/condo/active` + `PATCH` só zonas condo; agendas ads por `groupId` |
+| Devices | pairing, monitoring, comandos, re-parear, `GET /devices/mine` |
+| Edge | `/edge/pair`, `/edge/sync` (RR multi-ads + house), heartbeat, PoP, screenshot |
 | Relatórios | `GET /reports/sampling` |
 | Histórico | `GET /history` |
 
@@ -212,13 +220,16 @@ Em **Telas**: Re-sync / Screenshot / Reiniciar — entregues no próximo heartbe
 ## Capacidades atuais
 
 - [x] Clientes, planos, tipos de tela, layouts multi-zona  
-- [x] Mídias (upload, aprovação), cenas e agendamentos por canal  
+- [x] **Grupos de telas** por condomínio + dashboard de **capacidade** (18h × 10s × N)  
+- [x] Planos `10s × amostragens/dia × meses` com validação de overbook  
+- [x] Rodízio igual multi-anunciante no elevador + fill **Anuncie AQUI**  
+- [x] Mídias (upload, aprovação), cenas e agendamentos por canal / grupo  
 - [x] Flag condomínio + portal simplificado (só aviso ativo)  
 - [x] Espaço LEDE ↔ portal do cliente no sidebar  
 - [x] Histórico de modificações (portal + dashboard)  
 - [x] Troca de senha pelo próprio usuário  
-- [x] Edge: pairing, sync split, offline, PoP, heartbeat, screenshot, kiosk  
-- [x] Monitoramento online/offline  
+- [x] Edge: pairing, sync split, offline, PoP, heartbeat, screenshot, kiosk, rotação 0/90/180/270  
+- [x] Monitoramento online/offline + re-parear  
 - [x] Storage S3 (Eveo) + fallback local  
 - [x] Docker / Dokploy (compose + Dockerfiles)  
 
@@ -237,8 +248,9 @@ Resumo: app **Compose** no Dokploy → path `docker-compose.dokploy.yml` → env
 
 ## Próximos passos sugeridos
 
-- Validação em device físico (elevador split + cota PoP)  
-- Notificações de mídia pendente  
+- Validação em device físico (elevador split + cota PoP + RR multi-ads)  
+- Precificação/R$ e checkout de planos  
+- Waitlist / notificação quando grupo lotado libera vaga  
 - Harden de secrets e Device Owner em frota  
 
 ---

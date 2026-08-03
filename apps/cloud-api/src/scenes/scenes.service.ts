@@ -74,6 +74,11 @@ export class ScenesService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return this.prisma.scene.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.proofOfPlay.deleteMany({ where: { sceneId: id } }),
+      this.prisma.schedule.deleteMany({ where: { sceneId: id } }),
+      this.prisma.scene.delete({ where: { id } }),
+    ]);
+    return { ok: true };
   }
 }

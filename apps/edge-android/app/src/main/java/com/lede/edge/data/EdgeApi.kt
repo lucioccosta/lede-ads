@@ -50,7 +50,10 @@ class EdgeApi {
             .build()
         client.newCall(req).execute().use { res ->
             val text = res.body?.string().orEmpty()
-            if (!res.isSuccessful) error(text.ifBlank { "Falha no sync (${res.code})" })
+            if (!res.isSuccessful) {
+                if (res.code == 401) throw DeviceUnauthorizedException()
+                error(text.ifBlank { "Falha no sync (${res.code})" })
+            }
             moshi.adapter(SyncManifest::class.java).fromJson(text)
                 ?: error("Manifest inválido")
         }
@@ -74,6 +77,7 @@ class EdgeApi {
         client.newCall(req).execute().use { res ->
             val text = res.body?.string().orEmpty()
             if (!res.isSuccessful) {
+                if (res.code == 401) throw DeviceUnauthorizedException()
                 error(text.ifBlank { "Falha no heartbeat (${res.code})" })
             }
             val obj = if (text.isBlank()) JSONObject() else JSONObject(text)

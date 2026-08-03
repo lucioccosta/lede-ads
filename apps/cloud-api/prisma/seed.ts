@@ -27,6 +27,18 @@ async function main() {
     },
   });
 
+  // Cliente LEDE (house ads / Anuncie AQUI)
+  const ledeClient = await prisma.client.upsert({
+    where: { id: 'seed-client-lede' },
+    update: { name: 'LEDE', isCondo: false },
+    create: {
+      id: 'seed-client-lede',
+      name: 'LEDE',
+      email: 'house@lede.com',
+      isCondo: false,
+    },
+  });
+
   // Anunciante (portal cliente — envia/aprova mídias)
   const advertiser = await prisma.client.upsert({
     where: { id: 'seed-client-demo' },
@@ -113,13 +125,19 @@ async function main() {
     },
   });
 
+  const planStarts = new Date();
+  const planEnds = new Date(planStarts);
+  planEnds.setMonth(planEnds.getMonth() + 3);
+
   const plan = await prisma.plan.create({
     data: {
       clientId: advertiser.id,
-      name: 'Plano 10000 amostragens/dia',
-      samplesPerDay: 10000,
+      name: 'Plano 2000 amostragens/dia × 3 meses',
+      samplesPerDay: 2000,
       sampleDurationSec: 10,
-      startsAt: new Date(),
+      months: 3,
+      startsAt: planStarts,
+      endsAt: planEnds,
     },
   });
 
@@ -171,6 +189,19 @@ async function main() {
           role: 'ads',
         },
       ],
+    },
+  });
+
+  const mediaHouse = await prisma.media.create({
+    data: {
+      clientId: ledeClient.id,
+      name: 'Anuncie AQUI',
+      type: MediaType.image,
+      mimeType: 'image/png',
+      url: 'https://placehold.co/1080x1248/b45309/ffffff/png?text=Anuncie+AQUI',
+      checksum: 'demo-house-checksum',
+      durationMs: 10000,
+      status: MediaStatus.approved,
     },
   });
 
@@ -239,6 +270,36 @@ async function main() {
     },
   });
 
+  const sceneHouse = await prisma.scene.create({
+    data: {
+      clientId: ledeClient.id,
+      layoutId: layoutElevator.id,
+      name: 'Anuncie AQUI',
+      durationMs: 10000,
+      isHouseAd: true,
+      zones: {
+        create: [{ zoneKey: 'ads', mediaId: mediaHouse.id }],
+      },
+    },
+  });
+
+  const deviceGroup = await prisma.deviceGroup.create({
+    data: {
+      name: 'Elevadores Condo Demo',
+      clientId: condo.id,
+      viewingHoursPerDay: 18,
+      sampleDurationSec: 10,
+      houseSceneId: sceneHouse.id,
+    },
+  });
+
+  await prisma.planDeviceGroup.create({
+    data: {
+      planId: plan.id,
+      deviceGroupId: deviceGroup.id,
+    },
+  });
+
   const deviceLobby = await prisma.device.create({
     data: {
       name: 'TV Lobby',
@@ -257,6 +318,7 @@ async function main() {
       locationLabel: 'Elevador A',
       status: 'pairing',
       clientId: condo.id,
+      groupId: deviceGroup.id,
       screenTypeId: typeElevator.id,
       orientation: DeviceOrientation.portrait,
       timezone: 'America/Manaus',
@@ -284,6 +346,7 @@ async function main() {
       clientId: condo.id,
       sceneId: sceneCondo.id,
       deviceId: deviceElevator.id,
+      groupId: deviceGroup.id,
       channel: ScheduleChannel.condo,
       priority: 20,
       daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
@@ -298,7 +361,7 @@ async function main() {
       clientId: advertiser.id,
       sceneId: sceneAds.id,
       planId: plan.id,
-      deviceId: deviceElevator.id,
+      groupId: deviceGroup.id,
       channel: ScheduleChannel.ads,
       priority: 10,
       daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
@@ -314,6 +377,8 @@ async function main() {
     condo: 'condo@demo.com / condo123',
     pairingLobby: 'ABC123',
     pairingElevator: 'ELV001',
+    deviceGroup: deviceGroup.name,
+    houseAd: sceneHouse.name,
     screenTypes: [typeTv.slug, typeElevator.slug],
   });
 }

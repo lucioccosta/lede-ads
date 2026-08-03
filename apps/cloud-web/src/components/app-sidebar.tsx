@@ -107,6 +107,8 @@ export function AppSidebar({
           isActive:
             pathname.startsWith("/dashboard/clients") ||
             pathname.startsWith("/dashboard/plans") ||
+            pathname.startsWith("/dashboard/device-groups") ||
+            pathname.startsWith("/dashboard/capacity") ||
             pathname.startsWith("/dashboard/screen-types") ||
             pathname.startsWith("/dashboard/layouts") ||
             pathname.startsWith("/dashboard/media") ||
@@ -117,6 +119,8 @@ export function AppSidebar({
             { title: "Visão geral", url: "/dashboard" },
             { title: "Clientes", url: "/dashboard/clients" },
             { title: "Planos", url: "/dashboard/plans" },
+            { title: "Grupos de telas", url: "/dashboard/device-groups" },
+            { title: "Capacidade", url: "/dashboard/capacity" },
             { title: "Tipos de tela", url: "/dashboard/screen-types" },
             { title: "Layouts", url: "/dashboard/layouts" },
             { title: "Mídias", url: "/dashboard/media" },
@@ -130,10 +134,12 @@ export function AppSidebar({
           icon: <MonitorIcon />,
           isActive:
             pathname.startsWith("/dashboard/devices") ||
+            pathname.startsWith("/dashboard/capacity") ||
             pathname.startsWith("/dashboard/reports") ||
             pathname.startsWith("/dashboard/history"),
           items: [
             { title: "Telas / Monitoramento", url: "/dashboard/devices" },
+            { title: "Capacidade", url: "/dashboard/capacity" },
             { title: "Amostragem", url: "/dashboard/reports" },
             { title: "Histórico", url: "/dashboard/history" },
           ],

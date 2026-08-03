@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { CapacityService } from '../capacity/capacity.service';
 import { zonedDayBounds, zonedParts } from '../common/timezone';
 import { toPublicUrl } from '../common/public-url';
 import {
@@ -61,7 +62,10 @@ type SyncScene = {
 
 @Injectable()
 export class EdgeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly capacity: CapacityService,
+  ) {}
 
   async pair(dto: PairDeviceDto) {
     const device = await this.prisma.device.findFirst({
@@ -214,7 +218,11 @@ export class EdgeService {
     const schedules = await this.prisma.schedule.findMany({
       where: {
         active: true,
-        OR: [{ deviceId: device.id }, { deviceId: null }],
+        OR: [
+          { deviceId: device.id },
+          { deviceId: null, groupId: null },
+          ...(device.groupId ? [{ groupId: device.groupId }] : []),
+        ],
       },
       include: {
         plan: true,
@@ -264,6 +272,9 @@ export class EdgeService {
       if (s.endsAt && s.endsAt < now) return false;
       if (!s.scene.active) return false;
       if (s.planId && s.plan) {
+        if (!s.plan.active) return false;
+        if (s.plan.startsAt > now) return false;
+        if (s.plan.endsAt && s.plan.endsAt < now) return false;
         const used = popCountByPlan.get(s.planId) ?? 0;
         if (used >= s.plan.samplesPerDay) return false;
       }
@@ -274,116 +285,7 @@ export class EdgeService {
     let scenes: SyncScene[] = [];
 
     if (mode === ScreenTypeMode.condo_split) {
-      const condoSchedule = active.find(
-        (s) =>
-          s.channel === ScheduleChannel.condo &&
-          !!device.clientId &&
-          s.clientId === device.clientId,
-      );
-      const adsSchedule = active.find(
-        (s) => s.channel === ScheduleChannel.ads,
-      );
-      // Fallback: full-channel schedules can still fill ads if no ads channel
-      const adsFallback =
-        adsSchedule ??
-        active.find((s) => s.channel === ScheduleChannel.full);
-
-      const layoutSource =
-        condoSchedule?.scene.layout ??
-        adsFallback?.scene.layout ??
-        (device.screenTypeId
-          ? await this.prisma.layout.findFirst({
-              where: { screenTypeId: device.screenTypeId },
-              orderBy: { createdAt: 'asc' },
-            })
-          : null);
-
-      if (layoutSource) {
-        const layoutZones = this.parseLayoutZones(layoutSource.zonesJson);
-        const condoZones = condoSchedule
-          ? this.buildZonesFromSchedule(condoSchedule, 'condo')
-          : layoutZones
-              .filter((z) => (z.role ?? 'full') === 'condo')
-              .map((z) => ({
-                id: `empty-condo-${z.key}`,
-                key: z.key,
-                label: z.label,
-                x: z.x,
-                y: z.y,
-                width: z.width,
-                height: z.height,
-                media: null,
-              }));
-
-        const adsZones = adsFallback
-          ? this.buildZonesFromSchedule(
-              adsFallback,
-              adsFallback.channel === ScheduleChannel.full ? 'ads' : 'ads',
-            )
-          : layoutZones
-              .filter((z) => (z.role ?? 'full') === 'ads')
-              .map((z) => ({
-                id: `empty-ads-${z.key}`,
-                key: z.key,
-                label: z.label,
-                x: z.x,
-                y: z.y,
-                width: z.width,
-                height: z.height,
-                media: null,
-              }));
-
-        // If adsFallback is full channel without ads-role zones, take non-condo zones
-        let mergedAds = adsZones;
-        if (
-          adsFallback &&
-          adsFallback.channel === ScheduleChannel.full &&
-          !mergedAds.some((z) => z.media)
-        ) {
-          const layoutZs = this.parseLayoutZones(
-            adsFallback.scene.layout.zonesJson,
-          );
-          const nonCondo = new Set(
-            layoutZs
-              .filter((z) => (z.role ?? 'full') !== 'condo')
-              .map((z) => z.key),
-          );
-          mergedAds = this.buildZonesFromSchedule(adsFallback).filter((z) =>
-            nonCondo.has(z.key),
-          );
-        }
-
-        const zones = [...condoZones, ...mergedAds];
-        const durationMs = Math.max(
-          condoSchedule?.scene.durationMs ?? 0,
-          adsFallback?.scene.durationMs ?? 0,
-          10000,
-        );
-
-        if (zones.some((z) => z.media != null)) {
-          // Prefer ads scene id so Proof-of-Play conta na cota do inventário
-          const sceneId =
-            adsFallback?.scene.id ??
-            condoSchedule?.scene.id ??
-            `merged-${device.id}`;
-          scenes = [
-            {
-              id: sceneId,
-              name: condoSchedule?.scene.name ?? adsFallback?.scene.name ?? 'Playout',
-              durationMs,
-              layoutId:
-                condoSchedule?.scene.layoutId ??
-                adsFallback?.scene.layoutId ??
-                layoutSource.id,
-              layout: {
-                width: layoutSource.width,
-                height: layoutSource.height,
-              },
-              zones,
-            },
-          ];
-        }
-      }
+      scenes = await this.buildCondoSplitPlaylist(device, active);
     } else {
       scenes = active
         .filter((s) => s.channel === ScheduleChannel.full)
@@ -406,6 +308,271 @@ export class EdgeService {
       orientation: device.orientation,
       scenes,
     };
+  }
+
+  private emptyZones(
+    layoutZones: LayoutZone[],
+    role: 'condo' | 'ads',
+  ): SyncZone[] {
+    return layoutZones
+      .filter((z) => (z.role ?? 'full') === role)
+      .map((z) => ({
+        id: `empty-${role}-${z.key}`,
+        key: z.key,
+        label: z.label,
+        x: z.x,
+        y: z.y,
+        width: z.width,
+        height: z.height,
+        media: null,
+      }));
+  }
+
+  private mergeCondoAdsScene(params: {
+    condoZones: SyncZone[];
+    adsZones: SyncZone[];
+    layout: { id: string; width: number; height: number };
+    sceneId: string;
+    name: string;
+    durationMs: number;
+    layoutId: string;
+  }): SyncScene | null {
+    const zones = [...params.condoZones, ...params.adsZones];
+    if (!zones.some((z) => z.media != null)) return null;
+    return {
+      id: params.sceneId,
+      name: params.name,
+      durationMs: Math.max(params.durationMs, 10000),
+      layoutId: params.layoutId,
+      layout: {
+        width: params.layout.width,
+        height: params.layout.height,
+      },
+      zones,
+    };
+  }
+
+  /** Intercala anúncios pagos (peso igual) com house proporcional aos slots vagos. */
+  private buildHouseFillPattern(paidCount: number, vacantRatio: number) {
+    type Slot =
+      | { type: 'paid'; index: number }
+      | { type: 'house' };
+    if (paidCount <= 0) return [{ type: 'house' } as Slot];
+    const soldRatio = Math.max(0, 1 - vacantRatio);
+    if (soldRatio <= 0 || vacantRatio <= 0) {
+      return Array.from({ length: paidCount }, (_, index) => ({
+        type: 'paid' as const,
+        index,
+      }));
+    }
+    const houseWeight = Math.max(
+      1,
+      Math.round((paidCount * vacantRatio) / soldRatio),
+    );
+    const pattern: Slot[] = [];
+    for (let i = 0; i < paidCount; i++) {
+      pattern.push({ type: 'paid', index: i });
+    }
+    for (let i = 0; i < houseWeight; i++) {
+      pattern.push({ type: 'house' });
+    }
+    return pattern;
+  }
+
+  private async buildCondoSplitPlaylist(
+    device: {
+      id: string;
+      clientId: string | null;
+      groupId: string | null;
+      screenTypeId: string | null;
+    },
+    active: Array<{
+      id: string;
+      channel: ScheduleChannel;
+      clientId: string;
+      groupId: string | null;
+      deviceId: string | null;
+      scene: {
+        id: string;
+        name: string;
+        durationMs: number;
+        layoutId: string;
+        isHouseAd: boolean;
+        layout: { id: string; width: number; height: number; zonesJson: unknown };
+        zones: Array<{
+          id: string;
+          zoneKey: string;
+          media: {
+            id: string;
+            type: string;
+            status: MediaStatus;
+            url: string;
+            checksum: string;
+            durationMs: number;
+            mimeType: string;
+          } | null;
+        }>;
+      };
+    }>,
+  ): Promise<SyncScene[]> {
+    const condoSchedule = active.find(
+      (s) =>
+        s.channel === ScheduleChannel.condo &&
+        !!device.clientId &&
+        s.clientId === device.clientId,
+    );
+
+    const paidAds = active.filter(
+      (s) =>
+        s.channel === ScheduleChannel.ads &&
+        !s.scene.isHouseAd &&
+        (device.groupId
+          ? s.groupId === device.groupId || s.deviceId === device.id
+          : s.deviceId === device.id || s.deviceId === null),
+    );
+
+    // Fallback full-channel as ads when no ads schedules
+    const fullFallback =
+      paidAds.length === 0
+        ? active.find((s) => s.channel === ScheduleChannel.full)
+        : undefined;
+
+    let vacantRatio = 0;
+    if (device.groupId) {
+      try {
+        const cap = await this.capacity.getGroupCapacity(device.groupId);
+        vacantRatio =
+          cap.capacityPerDay > 0 ? cap.vacantPerDay / cap.capacityPerDay : 1;
+      } catch {
+        vacantRatio = paidAds.length === 0 ? 1 : 0;
+      }
+    } else if (paidAds.length === 0 && !fullFallback) {
+      vacantRatio = 1;
+    }
+
+    const group = device.groupId
+      ? await this.prisma.deviceGroup.findUnique({
+          where: { id: device.groupId },
+          include: {
+            houseScene: {
+              include: {
+                zones: { include: { media: true } },
+                layout: true,
+              },
+            },
+          },
+        })
+      : null;
+
+    let houseScene =
+      group?.houseScene ??
+      (await this.prisma.scene.findFirst({
+        where: { isHouseAd: true, active: true },
+        include: {
+          zones: { include: { media: true } },
+          layout: true,
+        },
+      }));
+
+    const layoutSource =
+      condoSchedule?.scene.layout ??
+      paidAds[0]?.scene.layout ??
+      fullFallback?.scene.layout ??
+      houseScene?.layout ??
+      (device.screenTypeId
+        ? await this.prisma.layout.findFirst({
+            where: { screenTypeId: device.screenTypeId },
+            orderBy: { createdAt: 'asc' },
+          })
+        : null);
+
+    if (!layoutSource) return [];
+
+    const layoutZones = this.parseLayoutZones(layoutSource.zonesJson);
+    const condoZones = condoSchedule
+      ? this.buildZonesFromSchedule(condoSchedule, 'condo')
+      : this.emptyZones(layoutZones, 'condo');
+
+    const paidEntries = paidAds.length
+      ? paidAds
+      : fullFallback
+        ? [fullFallback]
+        : [];
+
+    const houseAdsZones = houseScene
+      ? this.buildZonesFromSchedule(
+          {
+            scene: {
+              id: houseScene.id,
+              zones: houseScene.zones,
+              layout: houseScene.layout,
+            },
+          },
+          'ads',
+        )
+      : this.emptyZones(layoutZones, 'ads');
+
+    const pattern = this.buildHouseFillPattern(
+      paidEntries.length,
+      paidEntries.length === 0 ? 1 : vacantRatio,
+    );
+
+    const scenes: SyncScene[] = [];
+    for (const slot of pattern) {
+      if (slot.type === 'house') {
+        const merged = this.mergeCondoAdsScene({
+          condoZones,
+          adsZones: houseAdsZones,
+          layout: layoutSource,
+          sceneId: houseScene?.id ?? `house-${device.id}`,
+          name: houseScene?.name ?? 'Anuncie AQUI',
+          durationMs: houseScene?.durationMs ?? 10000,
+          layoutId: houseScene?.layoutId ?? layoutSource.id,
+        });
+        if (merged) scenes.push(merged);
+        continue;
+      }
+
+      const adsSchedule = paidEntries[slot.index];
+      if (!adsSchedule) continue;
+
+      let adsZones = this.buildZonesFromSchedule(
+        adsSchedule,
+        adsSchedule.channel === ScheduleChannel.full ? 'ads' : 'ads',
+      );
+      if (
+        adsSchedule.channel === ScheduleChannel.full &&
+        !adsZones.some((z) => z.media)
+      ) {
+        const layoutZs = this.parseLayoutZones(
+          adsSchedule.scene.layout.zonesJson,
+        );
+        const nonCondo = new Set(
+          layoutZs
+            .filter((z) => (z.role ?? 'full') !== 'condo')
+            .map((z) => z.key),
+        );
+        adsZones = this.buildZonesFromSchedule(adsSchedule).filter((z) =>
+          nonCondo.has(z.key),
+        );
+      }
+
+      const merged = this.mergeCondoAdsScene({
+        condoZones,
+        adsZones,
+        layout: layoutSource,
+        sceneId: adsSchedule.scene.id,
+        name: adsSchedule.scene.name,
+        durationMs: Math.max(
+          condoSchedule?.scene.durationMs ?? 0,
+          adsSchedule.scene.durationMs,
+        ),
+        layoutId: adsSchedule.scene.layoutId,
+      });
+      if (merged) scenes.push(merged);
+    }
+
+    return scenes;
   }
 
   async heartbeat(token: string, dto: HeartbeatDto) {

@@ -3,35 +3,48 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-/** Produção (Dokploy). Override: -Plede.apiBaseUrl=... ou local.properties */
+/** Produção (Dokploy). Override release: -Plede.apiBaseUrl=... */
 val PROD_API_BASE_URL = "https://api.lede.tv.br/api"
+
+/** Dev / debug na LAN (Aquario). Override: -Plede.devApiBaseUrl=... ou local.properties */
+val DEV_API_BASE_URL = "http://192.168.55.2:3001/api"
 
 /** Pasta do artefato deste tipo de edge (relativa à raiz do monorepo). */
 val EDGE_RELEASE_DIR = "releases/edge/aquario-stv2000-plus"
 val EDGE_APK_PREFIX = "lede-edge-aquario-stv2000-plus"
 
-fun readApiBaseUrl(): String {
-    val fromProp = project.findProperty("lede.apiBaseUrl") as String?
-    if (!fromProp.isNullOrBlank()) return fromProp.trim()
-
+fun readLocalProp(key: String): String? {
     val localFile = rootProject.file("local.properties")
-    if (localFile.exists()) {
-        localFile.readLines().forEach { line ->
-            val trimmed = line.trim()
-            if (trimmed.startsWith("lede.apiBaseUrl=")) {
-                val v = trimmed.substringAfter("=").trim()
-                if (v.isNotBlank()) return v
-            }
+    if (!localFile.exists()) return null
+    localFile.readLines().forEach { line ->
+        val trimmed = line.trim()
+        if (trimmed.startsWith("$key=")) {
+            val v = trimmed.substringAfter("=").trim()
+            if (v.isNotBlank()) return v
         }
     }
+    return null
+}
 
+fun readApiBaseUrl(forDebug: Boolean): String {
+    if (forDebug) {
+        val fromProp = project.findProperty("lede.devApiBaseUrl") as String?
+        if (!fromProp.isNullOrBlank()) return fromProp.trim()
+        readLocalProp("lede.devApiBaseUrl")?.let { return it }
+        return DEV_API_BASE_URL
+    }
+
+    val fromProp = project.findProperty("lede.apiBaseUrl") as String?
+    if (!fromProp.isNullOrBlank()) return fromProp.trim()
+    readLocalProp("lede.apiBaseUrl")?.let { return it }
     return PROD_API_BASE_URL
 }
 
 fun repoRoot(): java.io.File =
     rootProject.projectDir.resolve("../..").normalize()
 
-val apiBaseUrl = readApiBaseUrl()
+val releaseApiBaseUrl = readApiBaseUrl(forDebug = false)
+val debugApiBaseUrl = readApiBaseUrl(forDebug = true)
 
 android {
     namespace = "com.lede.edge"
@@ -44,7 +57,7 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "0.2.0"
-        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
@@ -67,7 +80,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+            buildConfigField("String", "API_BASE_URL", "\"$debugApiBaseUrl\"")
         }
         release {
             isMinifyEnabled = false
@@ -80,7 +93,7 @@ android {
             if (sideload?.storeFile?.exists() == true) {
                 signingConfig = sideload
             }
-            buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+            buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
         }
     }
 
@@ -129,6 +142,6 @@ tasks.register<Copy>("exportSideloadApk") {
         val out = repoRoot().resolve(EDGE_RELEASE_DIR)
             .resolve("$EDGE_APK_PREFIX-v${android.defaultConfig.versionName}.apk")
         println("APK: $out")
-        println("API_BASE_URL=$apiBaseUrl")
+        println("API_BASE_URL=$releaseApiBaseUrl")
     }
 }

@@ -16,6 +16,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.lede.edge.KioskPolicy
 import com.lede.edge.data.DeviceStore
+import com.lede.edge.data.DeviceUnauthorizedException
 import com.lede.edge.data.EdgeApi
 import com.lede.edge.data.ManifestStore
 import com.lede.edge.data.MediaCache
@@ -24,6 +25,7 @@ import com.lede.edge.data.ProofOfPlayQueue
 import com.lede.edge.data.RemoteCommand
 import com.lede.edge.data.SyncScene
 import com.lede.edge.databinding.ActivityPlayerBinding
+import android.content.Intent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,6 +62,10 @@ class PlayerActivity : AppCompatActivity() {
                     )
                     popQueue.flush(api, token)
                     result.commands.forEach { handleCommand(token, it) }
+                }.onFailure { err ->
+                    if (err is DeviceUnauthorizedException) {
+                        goToPairing()
+                    }
                 }
             }
             handler.postDelayed(this, 30_000)
@@ -89,7 +95,7 @@ class PlayerActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         store = DeviceStore(this)
-        OrientationHelper.apply(this, store.orientation)
+        OrientationHelper.apply(this, binding.root, store.orientation)
         composer = ZoneComposer(this)
         manifestStore = ManifestStore(this)
         mediaCache = MediaCache(this)
@@ -193,7 +199,11 @@ class PlayerActivity : AppCompatActivity() {
                 val manifest = remote.getOrThrow()
                 if (!manifest.orientation.isNullOrBlank()) {
                     store.orientation = manifest.orientation
-                    OrientationHelper.apply(this@PlayerActivity, manifest.orientation)
+                    OrientationHelper.apply(
+                        this@PlayerActivity,
+                        binding.root,
+                        manifest.orientation,
+                    )
                 }
                 withContext(Dispatchers.IO) { manifestStore.save(manifest) }
                 val local = mediaCache.materialize(manifest)
@@ -204,11 +214,20 @@ class PlayerActivity : AppCompatActivity() {
                 if (scenes.isNotEmpty()) playCurrent()
                 else showIdle("Sem cenas agendadas")
             } else {
+                val err = remote.exceptionOrNull()
+                if (err is DeviceUnauthorizedException) {
+                    goToPairing()
+                    return@launch
+                }
                 val cached = withContext(Dispatchers.IO) { manifestStore.load() }
                 if (cached != null) {
                     if (!cached.orientation.isNullOrBlank()) {
                         store.orientation = cached.orientation
-                        OrientationHelper.apply(this@PlayerActivity, cached.orientation)
+                        OrientationHelper.apply(
+                            this@PlayerActivity,
+                            binding.root,
+                            cached.orientation,
+                        )
                     }
                     val local = mediaCache.materialize(cached)
                     offlineMode = true
@@ -367,6 +386,19 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         return done.await()
+    }
+
+    private fun goToPairing() {
+        if (isFinishing || isDestroyed) return
+        store.clear()
+        handler.removeCallbacksAndMessages(null)
+        runCatching { stopLockTask() }
+        startActivity(
+            Intent(this, PairingActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            },
+        )
+        finish()
     }
 
     override fun onDestroy() {

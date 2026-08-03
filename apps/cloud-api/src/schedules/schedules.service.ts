@@ -26,6 +26,7 @@ export class SchedulesService {
         scene: true,
         plan: true,
         device: true,
+        group: { select: { id: true, name: true } },
         client: { select: { id: true, name: true } },
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
@@ -35,7 +36,12 @@ export class SchedulesService {
   async findOne(id: string) {
     const schedule = await this.prisma.schedule.findUnique({
       where: { id },
-      include: { scene: true, plan: true, device: true },
+      include: {
+        scene: true,
+        plan: true,
+        device: true,
+        group: { select: { id: true, name: true } },
+      },
     });
     if (!schedule) throw new NotFoundException('Agendamento não encontrado');
     return schedule;
@@ -49,6 +55,7 @@ export class SchedulesService {
         sceneId: dto.sceneId,
         planId: dto.planId ?? null,
         deviceId: dto.deviceId ?? null,
+        groupId: dto.groupId ?? null,
         channel: toChannel(dto.channel) ?? ScheduleChannel.full,
         priority: dto.priority ?? 0,
         daysOfWeek: dto.daysOfWeek,
@@ -69,6 +76,7 @@ export class SchedulesService {
         sceneId: dto.sceneId,
         planId: dto.planId === undefined ? undefined : dto.planId,
         deviceId: dto.deviceId === undefined ? undefined : dto.deviceId,
+        groupId: dto.groupId === undefined ? undefined : dto.groupId,
         channel: toChannel(dto.channel),
         priority: dto.priority,
         daysOfWeek: dto.daysOfWeek,

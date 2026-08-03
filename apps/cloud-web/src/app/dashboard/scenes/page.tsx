@@ -38,7 +38,8 @@ import { EmptyState } from "@/components/empty-state"
 import { ListToolbar } from "@/components/list-toolbar"
 import { toast } from "sonner"
 
-type Client = { id: string; name: string }
+type Client = { id: string; name: string; isCondo?: boolean }
+type ZoneRole = "full" | "condo" | "ads"
 type LayoutZone = {
   key: string
   label: string
@@ -46,6 +47,15 @@ type LayoutZone = {
   y: number
   width: number
   height: number
+  role?: ZoneRole
+}
+
+function zonesForClient(zones: LayoutZone[], isCondo: boolean): LayoutZone[] {
+  const target: ZoneRole = isCondo ? "condo" : "ads"
+  const matched = zones.filter((z) => (z.role ?? "full") === target)
+  if (matched.length > 0) return matched
+  // Layouts sem split: mantém zonas full
+  return zones.filter((z) => (z.role ?? "full") === "full")
 }
 type Layout = {
   id: string
@@ -124,8 +134,11 @@ export default function ScenesPage() {
     )
   }, [items, search])
 
+  const selectedClient = clients.find((c) => c.id === clientId)
+  const isCondoClient = Boolean(selectedClient?.isCondo)
   const selectedLayout = layouts.find((l) => l.id === layoutId)
-  const layoutZones = selectedLayout?.zonesJson ?? []
+  const allLayoutZones = selectedLayout?.zonesJson ?? []
+  const layoutZones = zonesForClient(allLayoutZones, isCondoClient)
 
   function initZoneMedia(
     zones: LayoutZone[],
@@ -140,11 +153,16 @@ export default function ScenesPage() {
   }
 
   function openCreate() {
+    const firstClient = clients[0]
     const firstLayout = layouts[0]
+    const editable = zonesForClient(
+      firstLayout?.zonesJson ?? [],
+      Boolean(firstClient?.isCondo),
+    )
     setEditing(null)
-    setClientId(clients[0]?.id ?? "")
+    setClientId(firstClient?.id ?? "")
     setLayoutId(firstLayout?.id ?? "")
-    setZoneMedia(initZoneMedia(firstLayout?.zonesJson ?? []))
+    setZoneMedia(initZoneMedia(editable))
     setName("")
     setDurationSec("10")
     setOpen(true)
@@ -160,31 +178,68 @@ export default function ScenesPage() {
         height: 1080,
         zonesJson: scene.layout.zonesJson ?? [],
       } as Layout)
+    const client = clients.find((c) => c.id === scene.clientId)
+    const editable = zonesForClient(
+      layout.zonesJson ?? [],
+      Boolean(client?.isCondo),
+    )
     setEditing(scene)
     setClientId(scene.clientId)
     setLayoutId(scene.layoutId)
     setName(scene.name)
     setDurationSec(String(scene.durationMs / 1000))
-    setZoneMedia(initZoneMedia(layout.zonesJson ?? [], scene.zones))
+    setZoneMedia(initZoneMedia(editable, scene.zones))
     setOpen(true)
+  }
+
+  function onClientChange(nextClientId: string) {
+    setClientId(nextClientId)
+    const client = clients.find((c) => c.id === nextClientId)
+    const layout = layouts.find((l) => l.id === layoutId)
+    const editable = zonesForClient(
+      layout?.zonesJson ?? [],
+      Boolean(client?.isCondo),
+    )
+    setZoneMedia(initZoneMedia(editable))
   }
 
   function onLayoutChange(nextLayoutId: string) {
     setLayoutId(nextLayoutId)
     const layout = layouts.find((l) => l.id === nextLayoutId)
-    setZoneMedia(initZoneMedia(layout?.zonesJson ?? []))
+    const editable = zonesForClient(
+      layout?.zonesJson ?? [],
+      isCondoClient,
+    )
+    setZoneMedia(initZoneMedia(editable))
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    const zones = layoutZones
+    const editableKeys = new Set(layoutZones.map((z) => z.key))
+    let zones = layoutZones
       .map((z) => ({
         zoneKey: z.key,
         mediaId: zoneMedia[z.key] || undefined,
       }))
       .filter((z) => z.mediaId)
 
-    if (layoutZones.length && zones.length === 0) {
+    // Na edição, preserva mídias de zonas que este cliente não edita
+    if (editing?.zones?.length) {
+      const preserved = editing.zones
+        .filter(
+          (z) =>
+            !editableKeys.has(z.zoneKey) &&
+            (z.mediaId || z.media?.id),
+        )
+        .map((z) => ({
+          zoneKey: z.zoneKey,
+          mediaId: z.mediaId ?? z.media?.id ?? undefined,
+        }))
+        .filter((z) => z.mediaId)
+      zones = [...zones, ...preserved]
+    }
+
+    if (layoutZones.length && zones.filter((z) => editableKeys.has(z.zoneKey)).length === 0) {
       toast.error("Selecione ao menos uma mídia para uma zona")
       return
     }
@@ -225,6 +280,21 @@ export default function ScenesPage() {
     await load()
   }
 
+  async function removeScene(scene: Scene) {
+    const ok = window.confirm(
+      `Remover a cena "${scene.name}"? Agendas e provas de exibição vinculadas serão apagadas.`,
+    )
+    if (!ok) return
+    try {
+      await api(`/scenes/${scene.id}`, { method: "DELETE" })
+      toast.success("Cena removida")
+      if (editing?.id === scene.id) setOpen(false)
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao remover")
+    }
+  }
+
   return (
     <div className="space-y-6 py-2">
       <div className="flex items-center justify-between">
@@ -250,7 +320,7 @@ export default function ScenesPage() {
                 <Label>Cliente</Label>
                 <Select
                   value={clientId}
-                  onValueChange={(v) => setClientId(v ?? "")}
+                  onValueChange={(v) => onClientChange(v ?? "")}
                   items={Object.fromEntries(clients.map((c) => [c.id, c.name]))}
                 >
                   <SelectTrigger className="w-full">
@@ -301,15 +371,24 @@ export default function ScenesPage() {
               <div>
                 <Label>Mídias por zona</Label>
                 <p className="text-xs text-muted-foreground">
-                  {layoutZones.length
-                    ? `${layoutZones.length} zona(s) no layout selecionado`
-                    : "Selecione um layout"}
+                  {!clientId || !layoutId
+                    ? "Selecione cliente e layout"
+                    : layoutZones.length
+                      ? isCondoClient
+                        ? "Cliente condomínio: somente zona de condomínio"
+                        : "Cliente anunciante: somente zona de anúncios"
+                      : "Nenhuma zona disponível para este tipo de cliente no layout"}
                 </p>
               </div>
               {layoutZones.map((z) => (
                 <div key={z.key} className="space-y-2 rounded-lg border p-3">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{z.label}</Badge>
+                    {(z.role === "condo" || z.role === "ads") && (
+                      <Badge variant="secondary">
+                        {z.role === "condo" ? "Condomínio" : "Anúncios"}
+                      </Badge>
+                    )}
                     <span className="font-mono text-xs text-muted-foreground">
                       {z.key}
                     </span>
@@ -441,6 +520,13 @@ export default function ScenesPage() {
                           onClick={() => void toggleActive(s)}
                         >
                           {s.active ? "Desativar" : "Ativar"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => void removeScene(s)}
+                        >
+                          Remover
                         </Button>
                       </TableCell>
                     </TableRow>

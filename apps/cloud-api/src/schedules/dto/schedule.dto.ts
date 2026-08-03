@@ -32,6 +32,11 @@ export class CreateScheduleDto {
   deviceId?: string | null;
 
   @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  groupId?: string | null;
+
+  @IsOptional()
   @IsIn(['full', 'condo', 'ads'])
   channel?: 'full' | 'condo' | 'ads';
 
@@ -80,6 +85,11 @@ export class UpdateScheduleDto {
   @ValidateIf((_o, v) => v !== null)
   @IsString()
   deviceId?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  groupId?: string | null;
 
   @IsOptional()
   @IsIn(['full', 'condo', 'ads'])

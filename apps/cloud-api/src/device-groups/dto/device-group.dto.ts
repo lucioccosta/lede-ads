@@ -1,25 +1,28 @@
 import {
   IsArray,
   IsBoolean,
-  IsDateString,
   IsInt,
   IsOptional,
   IsString,
   Min,
+  MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class CreatePlanDto {
+export class CreateDeviceGroupDto {
+  @IsString()
+  @MinLength(2)
+  name!: string;
+
   @IsString()
   clientId!: string;
 
-  @IsString()
-  name!: string;
-
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Type(() => Number)
-  samplesPerDay!: number;
+  viewingHoursPerDay?: number;
 
   @IsOptional()
   @IsInt()
@@ -28,61 +31,49 @@ export class CreatePlanDto {
   sampleDurationSec?: number;
 
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
-  months?: number;
-
-  @IsDateString()
-  startsAt!: string;
-
-  @IsOptional()
-  @IsDateString()
-  endsAt?: string;
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  houseSceneId?: string | null;
 
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  groupIds?: string[];
+  deviceIds?: string[];
 }
 
-export class UpdatePlanDto {
+export class UpdateDeviceGroupDto {
   @IsOptional()
   @IsString()
+  @MinLength(2)
   name?: string;
 
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
-  samplesPerDay?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
-  sampleDurationSec?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
-  months?: number;
-
-  @IsOptional()
-  @IsDateString()
-  startsAt?: string;
-
-  @IsOptional()
-  @IsDateString()
-  endsAt?: string;
+  @IsString()
+  clientId?: string;
 
   @IsOptional()
   @IsBoolean()
   active?: boolean;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  viewingHoursPerDay?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  sampleDurationSec?: number;
+
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  houseSceneId?: string | null;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  groupIds?: string[];
+  deviceIds?: string[];
 }

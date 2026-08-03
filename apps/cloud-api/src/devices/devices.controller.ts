@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
@@ -10,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { DevicesService } from './devices.service';
 import {
+  BatchCreateDevicesDto,
   BatchTimezoneDto,
   CreateDeviceCommandDto,
   CreateDeviceDto,
@@ -56,6 +58,18 @@ export class DevicesController {
     return this.devices.createPairing(dto);
   }
 
+  @Post('pairing/batch')
+  @Roles('lede_admin', 'lede_operator')
+  createBatch(@Body() dto: BatchCreateDevicesDto) {
+    return this.devices.createBatch(dto);
+  }
+
+  @Post(':id/pairing/reset')
+  @Roles('lede_admin', 'lede_operator')
+  resetPairing(@Param('id') id: string) {
+    return this.devices.resetPairing(id);
+  }
+
   @Get(':id/commands')
   @Roles('lede_admin', 'lede_operator')
   listCommands(@Param('id') id: string) {
@@ -87,5 +101,11 @@ export class DevicesController {
   @Roles('lede_admin', 'lede_operator')
   update(@Param('id') id: string, @Body() dto: UpdateDeviceDto) {
     return this.devices.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles('lede_admin', 'lede_operator')
+  remove(@Param('id') id: string) {
+    return this.devices.remove(id);
   }
 }

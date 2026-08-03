@@ -44,8 +44,10 @@ type Device = {
     | "landscape_reverse"
     | "portrait_reverse";
   clientId: string | null;
+  groupId?: string | null;
   screenTypeId: string | null;
   client?: { id: string; name: string } | null;
+  group?: { id: string; name: string } | null;
   screenType?: {
     id: string;
     name: string;
@@ -65,6 +67,7 @@ type ScreenType = {
   slug: string;
   mode: string;
 };
+type DeviceGroup = { id: string; name: string };
 
 type DeviceCommand = {
   id: string;
@@ -113,14 +116,19 @@ export default function DevicesPage() {
   const [items, setItems] = useState<Device[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [screenTypes, setScreenTypes] = useState<ScreenType[]>([]);
+  const [deviceGroups, setDeviceGroups] = useState<DeviceGroup[]>([]);
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
+  const [namePrefix, setNamePrefix] = useState("");
+  const [nameCount, setNameCount] = useState(1);
   const [location, setLocation] = useState("");
   const [timezone, setTimezone] = useState("America/Manaus");
   const [orientation, setOrientation] = useState<DeviceOrientation>("landscape");
   const [clientId, setClientId] = useState("none");
   const [screenTypeId, setScreenTypeId] = useState("none");
-  const [createdCode, setCreatedCode] = useState<string | null>(null);
+  const [createdDevices, setCreatedDevices] = useState<
+    { name: string; pairingCode: string | null }[]
+  >([]);
+  const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -129,16 +137,28 @@ export default function DevicesPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyDevice, setHistoryDevice] = useState<Device | null>(null);
   const [commands, setCommands] = useState<DeviceCommand[]>([]);
+  const [editing, setEditing] = useState<Device | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editTimezone, setEditTimezone] = useState("America/Manaus");
+  const [editOrientation, setEditOrientation] =
+    useState<DeviceOrientation>("landscape");
+  const [editClientId, setEditClientId] = useState("none");
+  const [editGroupId, setEditGroupId] = useState("none");
+  const [editScreenTypeId, setEditScreenTypeId] = useState("none");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function load() {
-    const [devices, clientList, types] = await Promise.all([
+    const [devices, clientList, types, groups] = await Promise.all([
       api<Device[]>("/devices/monitoring"),
       api<Client[]>("/clients"),
       api<ScreenType[]>("/screen-types"),
+      api<DeviceGroup[]>("/device-groups"),
     ]);
     setItems(devices);
     setClients(clientList);
     setScreenTypes(types);
+    setDeviceGroups(groups);
   }
 
   useEffect(() => {
@@ -172,31 +192,106 @@ export default function DevicesPage() {
     setSelected(checked ? filtered.map((d) => d.id) : []);
   }
 
-  async function onCreate(e: FormEvent) {
-    e.preventDefault();
-    const device = await api<{ pairingCode: string | null }>(
-      "/devices/pairing/create",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          locationLabel: location || undefined,
-          timezone,
-          orientation,
-          clientId: clientId === "none" ? null : clientId,
-          screenTypeId: screenTypeId === "none" ? null : screenTypeId,
-        }),
-      },
-    );
-    setCreatedCode(device.pairingCode);
-    toast.success("Device criado — use o código no Edge");
-    setName("");
+  function resetCreateForm() {
+    setNamePrefix("");
+    setNameCount(1);
     setLocation("");
     setTimezone("America/Manaus");
     setOrientation("landscape");
     setClientId("none");
     setScreenTypeId("none");
-    await load();
+  }
+
+  function buildNames(prefix: string, count: number) {
+    const base = prefix.trim();
+    const n = Math.min(Math.max(Math.floor(count), 1), 200);
+    if (base.length < 1) return [];
+    return Array.from({ length: n }, (_, i) => `${base} ${i + 1}`);
+  }
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    const names = buildNames(namePrefix, nameCount);
+    if (names.length === 0) {
+      toast.error("Informe um prefixo para as telas");
+      return;
+    }
+    if (namePrefix.trim().length < 1) {
+      toast.error("Prefixo inválido");
+      return;
+    }
+    setCreating(true);
+    try {
+      const payload = {
+        names,
+        locationLabel: location || undefined,
+        timezone,
+        orientation,
+        clientId: clientId === "none" ? null : clientId,
+        screenTypeId: screenTypeId === "none" ? null : screenTypeId,
+      };
+      const devices = await api<
+        { name: string; pairingCode: string | null }[]
+      >("/devices/pairing/batch", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setCreatedDevices(devices);
+      toast.success(
+        devices.length === 1
+          ? "Tela criada — use o código no Edge"
+          : `${devices.length} telas criadas`,
+      );
+      resetCreateForm();
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao criar");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function openEdit(device: Device) {
+    setEditing(device);
+    setEditName(device.name);
+    setEditLocation(device.locationLabel ?? "");
+    setEditTimezone(device.timezone || "America/Manaus");
+    setEditOrientation(device.orientation || "landscape");
+    setEditClientId(device.clientId || "none");
+    setEditGroupId(device.groupId || "none");
+    setEditScreenTypeId(device.screenTypeId || "none");
+  }
+
+  async function onSaveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    const trimmed = editName.trim();
+    if (trimmed.length < 2) {
+      toast.error("Nome deve ter ao menos 2 caracteres");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await api(`/devices/${editing.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: trimmed,
+          locationLabel: editLocation.trim() || null,
+          timezone: editTimezone,
+          orientation: editOrientation,
+          clientId: editClientId === "none" ? null : editClientId,
+          groupId: editGroupId === "none" ? null : editGroupId,
+          screenTypeId: editScreenTypeId === "none" ? null : editScreenTypeId,
+        }),
+      });
+      toast.success("Tela atualizada");
+      setEditing(null);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   async function sendCommand(
@@ -225,8 +320,58 @@ export default function DevicesPage() {
       if (historyDevice?.id === deviceId) {
         await openHistory(historyDevice);
       }
+      await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Falha no comando");
+      toast.error(err instanceof Error ? err.message : "Erro no comando");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeDevice(device: Device) {
+    const ok = window.confirm(
+      `Remover a tela "${device.name}"? Agendas vinculadas ficarão sem device e o histórico de provas será apagado.`,
+    );
+    if (!ok) return;
+    setBusyId(device.id);
+    try {
+      await api(`/devices/${device.id}`, { method: "DELETE" });
+      toast.success("Tela removida");
+      setSelected((prev) => prev.filter((id) => id !== device.id));
+      if (historyDevice?.id === device.id) {
+        setHistoryOpen(false);
+        setHistoryDevice(null);
+      }
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao remover");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function resetPairing(device: Device) {
+    const ok = window.confirm(
+      `Re-parear "${device.name}"? O app Edge atual será desconectado e um novo código será gerado.`,
+    );
+    if (!ok) return;
+    setBusyId(device.id);
+    try {
+      const updated = await api<{
+        name: string;
+        pairingCode: string | null;
+      }>(`/devices/${device.id}/pairing/reset`, { method: "POST" });
+      setCreatedDevices([
+        {
+          name: updated.name,
+          pairingCode: updated.pairingCode,
+        },
+      ]);
+      setOpen(true);
+      toast.success("Novo código de pairing gerado");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao re-parear");
     } finally {
       setBusyId(null);
     }
@@ -321,36 +466,87 @@ export default function DevicesPage() {
           open={open}
           onOpenChange={(v) => {
             setOpen(v);
-            if (!v) setCreatedCode(null);
+            if (!v) setCreatedDevices([]);
           }}
         >
-          <Button onClick={() => setOpen(true)}>Novo device</Button>
-          <DialogContent>
+          <Button onClick={() => setOpen(true)}>Novas telas</Button>
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Pairing de tela</DialogTitle>
+              <DialogTitle>
+                {createdDevices.length > 0
+                  ? "Códigos de pairing"
+                  : "Cadastrar telas"}
+              </DialogTitle>
             </DialogHeader>
-            {createdCode ? (
-              <div className="space-y-3 text-center">
+            {createdDevices.length > 0 ? (
+              <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Digite este código no app Edge:
+                  Digite cada código no app Edge correspondente:
                 </p>
-                <p className="text-4xl font-semibold tracking-[0.3em]">
-                  {createdCode}
-                </p>
+                <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+                  {createdDevices.map((d) => (
+                    <div
+                      key={`${d.name}-${d.pairingCode}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                    >
+                      <span className="font-medium text-foreground">
+                        {d.name}
+                      </span>
+                      <span className="font-mono text-lg tracking-widest text-foreground">
+                        {d.pairingCode ?? "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  onClick={() => {
+                    setCreatedDevices([]);
+                    setOpen(false);
+                  }}
+                >
+                  Fechar
+                </Button>
               </div>
             ) : (
               <form className="space-y-4" onSubmit={onCreate}>
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nome</Label>
-                  <Input
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-1">
+                    <Label htmlFor="namePrefix">Prefixo</Label>
+                    <Input
+                      id="namePrefix"
+                      value={namePrefix}
+                      onChange={(e) => setNamePrefix(e.target.value)}
+                      placeholder="Lobby"
+                      required
+                      minLength={1}
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-1">
+                    <Label htmlFor="nameCount">Quantidade de telas</Label>
+                    <Input
+                      id="nameCount"
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={nameCount}
+                      onChange={(e) =>
+                        setNameCount(Number(e.target.value) || 1)
+                      }
+                      required
+                    />
+                  </div>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Ex.: prefixo <span className="font-medium">Lobby</span> e
+                  quantidade <span className="font-medium">3</span> cria{" "}
+                  <span className="font-medium">Lobby 1</span>,{" "}
+                  <span className="font-medium">Lobby 2</span>,{" "}
+                  <span className="font-medium">Lobby 3</span>.
+                </p>
                 <div className="space-y-2">
-                  <Label htmlFor="location">Local</Label>
+                  <Label htmlFor="location">Local (opcional, para todas)</Label>
                   <Input
                     id="location"
                     value={location}
@@ -458,8 +654,8 @@ export default function DevicesPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button type="submit" className="w-full">
-                  Gerar código
+                <Button type="submit" className="w-full" disabled={creating}>
+                  {creating ? "Criando…" : "Gerar códigos"}
                 </Button>
               </form>
             )}
@@ -479,6 +675,7 @@ export default function DevicesPage() {
             all: "Todos os status",
             online: "Online",
             offline: "Offline",
+            pairing: "Aguardando pairing",
           }}
         >
           <SelectTrigger className="w-[160px]">
@@ -488,6 +685,7 @@ export default function DevicesPage() {
             <SelectItem value="all">Todos os status</SelectItem>
             <SelectItem value="online">Online</SelectItem>
             <SelectItem value="offline">Offline</SelectItem>
+            <SelectItem value="pairing">Aguardando pairing</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -520,7 +718,7 @@ export default function DevicesPage() {
           icon={<MonitorIcon className="size-10" />}
           title="Nenhuma tela cadastrada"
           description="Crie um device e pareie com o app Edge para monitorar heartbeat e screenshots."
-          actionLabel="Novo device"
+          actionLabel="Novas telas"
           onAction={() => setOpen(true)}
         />
       ) : filtered.length === 0 ? (
@@ -569,10 +767,14 @@ export default function DevicesPage() {
                       variant={
                         d.computedStatus === "online"
                           ? "default"
-                          : "destructive"
+                          : d.computedStatus === "pairing"
+                            ? "secondary"
+                            : "destructive"
                       }
                     >
-                      {d.computedStatus}
+                      {d.computedStatus === "pairing"
+                        ? "Aguardando pairing"
+                        : d.computedStatus}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -711,6 +913,13 @@ export default function DevicesPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      onClick={() => openEdit(d)}
+                    >
+                      Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       disabled={busyId === d.id}
                       onClick={() => void sendCommand(d.id, "resync")}
                     >
@@ -734,10 +943,26 @@ export default function DevicesPage() {
                     </Button>
                     <Button
                       size="sm"
+                      variant="outline"
+                      disabled={busyId === d.id}
+                      onClick={() => void resetPairing(d)}
+                    >
+                      Re-parear
+                    </Button>
+                    <Button
+                      size="sm"
                       variant="ghost"
                       onClick={() => void openHistory(d)}
                     >
                       Histórico
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={busyId === d.id}
+                      onClick={() => void removeDevice(d)}
+                    >
+                      Remover
                     </Button>
                   </div>
                   {resolveMediaUrl(d.lastScreenshotUrl) && (
@@ -803,6 +1028,173 @@ export default function DevicesPage() {
               ))
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!editing}
+        onOpenChange={(v) => {
+          if (!v) setEditing(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar tela</DialogTitle>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={onSaveEdit}>
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Nome</Label>
+              <Input
+                id="edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-location">Local</Label>
+              <Input
+                id="edit-location"
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Timezone</Label>
+              <Select
+                value={editTimezone}
+                onValueChange={(v) => setEditTimezone(v ?? "America/Manaus")}
+                items={Object.fromEntries(
+                  TIMEZONES.map((t) => [t.value, t.label]),
+                )}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Orientação</Label>
+              <Select
+                value={editOrientation}
+                onValueChange={(v) => {
+                  if (
+                    v === "portrait" ||
+                    v === "landscape" ||
+                    v === "landscape_reverse" ||
+                    v === "portrait_reverse"
+                  ) {
+                    setEditOrientation(v);
+                  }
+                }}
+                items={Object.fromEntries(
+                  ORIENTATIONS.map((o) => [o.value, o.label]),
+                )}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ORIENTATIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de tela</Label>
+              <Select
+                value={editScreenTypeId}
+                onValueChange={(v) => setEditScreenTypeId(v ?? "none")}
+                items={{
+                  none: "Nenhum",
+                  ...Object.fromEntries(screenTypes.map((t) => [t.id, t.name])),
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum</SelectItem>
+                  {screenTypes.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Condomínio (cliente)</Label>
+              <Select
+                value={editClientId}
+                onValueChange={(v) => setEditClientId(v ?? "none")}
+                items={{
+                  none: "Nenhum",
+                  ...Object.fromEntries(clients.map((c) => [c.id, c.name])),
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum</SelectItem>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Grupo de telas</Label>
+              <Select
+                value={editGroupId}
+                onValueChange={(v) => setEditGroupId(v ?? "none")}
+                items={{
+                  none: "Nenhum",
+                  ...Object.fromEntries(
+                    deviceGroups.map((g) => [g.id, g.name]),
+                  ),
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum</SelectItem>
+                  {deviceGroups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setEditing(null)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" className="flex-1" disabled={savingEdit}>
+                {savingEdit ? "Salvando…" : "Salvar"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

@@ -74,14 +74,15 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users            User[]
-  plans            Plan[]
-  media            Media[]
-  scenes           Scene[]
-  schedules        Schedule[]
-  devices          Device[]
+  users              User[]
+  plans              Plan[]
+  media              Media[]
+  scenes             Scene[]
+  schedules          Schedule[]
+  devices            Device[]
+  deviceGroups       DeviceGroup[]
   allowedScreenTypes ClientScreenType[]
-  changeLogs       ChangeLog[]
+  changeLogs         ChangeLog[]
 }
 
 model User {
@@ -100,19 +101,50 @@ model User {
 }
 
 model Plan {
-  id                 String   @id @default(cuid())
-  clientId           String
-  client             Client   @relation(fields: [clientId], references: [id])
-  name               String
-  samplesPerDay      Int
-  sampleDurationSec  Int      @default(10)
-  startsAt           DateTime
-  endsAt             DateTime?
-  active             Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                String    @id @default(cuid())
+  clientId          String
+  client            Client    @relation(fields: [clientId], references: [id])
+  name              String
+  samplesPerDay     Int
+  sampleDurationSec Int       @default(10)
+  months            Int       @default(1)
+  startsAt          DateTime
+  endsAt            DateTime?
+  active            Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  schedules Schedule[]
+  schedules   Schedule[]
+  deviceGroups PlanDeviceGroup[]
+}
+
+model DeviceGroup {
+  id                  String   @id @default(cuid())
+  name                String
+  clientId            String
+  client              Client   @relation(fields: [clientId], references: [id])
+  active              Boolean  @default(true)
+  viewingHoursPerDay  Int      @default(18)
+  sampleDurationSec   Int      @default(10)
+  houseSceneId        String?
+  houseScene          Scene?   @relation("GroupHouseScene", fields: [houseSceneId], references: [id])
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  devices    Device[]
+  plans      PlanDeviceGroup[]
+  schedules  Schedule[]
+}
+
+model PlanDeviceGroup {
+  id            String      @id @default(cuid())
+  planId        String
+  plan          Plan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  deviceGroupId String
+  deviceGroup   DeviceGroup @relation(fields: [deviceGroupId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([planId, deviceGroupId])
 }
 
 model ScreenType {
@@ -185,12 +217,14 @@ model Scene {
   name       String
   durationMs Int      @default(10000)
   active     Boolean  @default(true)
+  isHouseAd  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  zones     SceneZone[]
-  schedules Schedule[]
-  proofs    ProofOfPlay[]
+  zones       SceneZone[]
+  schedules   Schedule[]
+  proofs      ProofOfPlay[]
+  houseGroups DeviceGroup[] @relation("GroupHouseScene")
 }
 
 model SceneZone {
@@ -214,6 +248,8 @@ model Device {
   timezone          String            @default("America/Manaus")
   clientId          String?
   client            Client?           @relation(fields: [clientId], references: [id])
+  groupId           String?
+  group             DeviceGroup?      @relation(fields: [groupId], references: [id])
   screenTypeId      String?
   screenType        ScreenType?       @relation(fields: [screenTypeId], references: [id])
   lastHeartbeatAt   DateTime?
@@ -246,26 +282,28 @@ model DeviceCommand {
 }
 
 model Schedule {
-  id        String          @id @default(cuid())
-  name      String
-  clientId  String
-  client    Client          @relation(fields: [clientId], references: [id])
-  sceneId   String
-  scene     Scene           @relation(fields: [sceneId], references: [id])
-  planId    String?
-  plan      Plan?           @relation(fields: [planId], references: [id])
-  deviceId  String?
-  device    Device?         @relation(fields: [deviceId], references: [id])
-  channel   ScheduleChannel @default(full)
-  priority  Int             @default(0)
-  daysOfWeek Int[]
-  startTime String
-  endTime   String
-  startsAt  DateTime?
-  endsAt    DateTime?
-  active    Boolean         @default(true)
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id            String          @id @default(cuid())
+  name          String
+  clientId      String
+  client        Client          @relation(fields: [clientId], references: [id])
+  sceneId       String
+  scene         Scene           @relation(fields: [sceneId], references: [id])
+  planId        String?
+  plan          Plan?           @relation(fields: [planId], references: [id])
+  deviceId      String?
+  device        Device?         @relation(fields: [deviceId], references: [id])
+  groupId       String?
+  group         DeviceGroup?    @relation(fields: [groupId], references: [id])
+  channel       ScheduleChannel @default(full)
+  priority      Int             @default(0)
+  daysOfWeek    Int[]
+  startTime     String
+  endTime       String
+  startsAt      DateTime?
+  endsAt        DateTime?
+  active        Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 }
 
 model ProofOfPlay {

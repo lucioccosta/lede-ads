@@ -17,7 +17,6 @@ class PairingActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = DeviceStore(this)
-        OrientationHelper.apply(this, store.orientation)
         if (!store.deviceToken.isNullOrBlank()) {
             startActivity(Intent(this, PlayerActivity::class.java))
             finish()
@@ -26,6 +25,7 @@ class PairingActivity : AppCompatActivity() {
 
         binding = ActivityPairingBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        OrientationHelper.apply(this, binding.root, store.orientation)
 
         binding.pairButton.setOnClickListener {
             val code = binding.codeInput.text?.toString().orEmpty().trim()
@@ -41,7 +41,11 @@ class PairingActivity : AppCompatActivity() {
                     store.deviceId = result.deviceId
                     store.deviceName = result.name
                     store.orientation = result.orientation
-                    OrientationHelper.apply(this@PairingActivity, result.orientation)
+                    OrientationHelper.apply(
+                        this@PairingActivity,
+                        binding.root,
+                        result.orientation,
+                    )
                     startActivity(Intent(this@PairingActivity, PlayerActivity::class.java))
                     finish()
                 } catch (e: Exception) {
