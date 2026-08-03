@@ -12,4 +12,4 @@ if [ "${RUN_SEED:-false}" = "true" ]; then
 fi
 
 echo "[lede-api] iniciando NestJS na porta ${PORT:-3001}"
-exec node dist/main.js
+exec node dist/src/main.js
