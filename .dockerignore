@@ -6,7 +6,7 @@
 **/.env
 **/.env.*
 !**/.env.example
-**/uploads
+apps/cloud-api/uploads
 **/*.log
 **/coverage
 **/.turbo
