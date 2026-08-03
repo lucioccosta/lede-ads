@@ -41,3 +41,7 @@ npm-debug.log*
 # Misc
 .turbo/
 apps/cloud-api/uploads/
+
+.windsurf/
+**/.windsurf/
+skills-lock.json
