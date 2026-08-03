@@ -7,7 +7,8 @@
 #   - service `api` → porta 3001  (api.lede.tv.br)
 
 services:
-  postgres:
+  # Nome único: na dokploy-network, "postgres" conflita com outros stacks (DNS).
+  lede-postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -30,14 +31,14 @@ services:
       dockerfile: docker/api.Dockerfile
     restart: unless-stopped
     depends_on:
-      postgres:
+      lede-postgres:
         condition: service_healthy
     env_file:
       - .env
     environment:
       NODE_ENV: production
       PORT: "3001"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-lede}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lede_ads}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lede}:${POSTGRES_PASSWORD}@lede-postgres:5432/${POSTGRES_DB:-lede_ads}?schema=public
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?defina PUBLIC_BASE_URL}

@@ -21,8 +21,8 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<"div">) {
   const router = useRouter()
-  const [email, setEmail] = useState("admin@lede.com")
-  const [password, setPassword] = useState("admin123")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -93,9 +93,6 @@ export function LoginForm({
                   {loading ? "Entrando…" : "Entrar"}
                 </Button>
               </Field>
-              <FieldDescription className="text-center">
-                Demo: admin@lede.com / admin123
-              </FieldDescription>
             </FieldGroup>
           </form>
           <div className="relative hidden bg-black md:flex md:items-center md:justify-center">
