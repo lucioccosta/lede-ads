@@ -3,8 +3,8 @@
 # Environment: cole o conteúdo de .env.dokploy.example (ajuste URLs/senhas)
 #
 # Domínios no Dokploy:
-#   - service `web` → porta 3000  (ex.: app.seudominio.com)
-#   - service `api` → porta 3001  (ex.: api.seudominio.com)
+#   - service `web` → porta 3000  (app.lede.tv.br)
+#   - service `api` → porta 3001  (api.lede.tv.br)
 
 services:
   postgres:

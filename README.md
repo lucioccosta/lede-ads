@@ -13,7 +13,9 @@ Plataforma **Cloud + Edge** para propagandas em TVs e telas LED (elevadores, lob
 apps/
   cloud-web/      # Next.js — dashboard LEDE + portal cliente/condomínio (shadcn/ui)
   cloud-api/      # NestJS + Prisma + PostgreSQL
-  edge-android/   # Player Android 11+ (Kotlin, ExoPlayer)
+  edge-android/   # Player Android 10+ (Kotlin, ExoPlayer) — sideload por tipo de box
+releases/
+  edge/           # Docs + artefatos por dispositivo (APKs no GitHub Releases)
 packages/
   shared-types/   # Contratos TypeScript compartilhados
 ```
@@ -170,12 +172,21 @@ Prefixo global: `/api`.
 
 ## Edge Android
 
+Artefatos por dispositivo em [`releases/edge/`](releases/edge/) — downloads nas [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases).
+
+| Tipo | Pasta | Dispositivo |
+|------|-------|-------------|
+| Aquario | [`aquario-stv2000-plus`](releases/edge/aquario-stv2000-plus/) | STV-2000 Plus 4 (Android 10) |
+
+**Produção:** o APK de release aponta para `https://api.lede.tv.br/api`.
+
+Desenvolvimento local:
+
 1. Abra `apps/edge-android` no Android Studio.  
-2. Ajuste `API_BASE_URL` em `app/build.gradle.kts`:  
-   - Emulador AVD: `http://10.0.2.2:3001/api`  
-   - Device na mesma Wi‑Fi: `http://<IP-DO-HOST>:3001/api`  
-3. Rode em Android 11+.  
-4. Pareie com o código gerado em Cloud Ops → Telas.
+2. Override: `lede.apiBaseUrl=http://10.0.2.2:3001/api` em `local.properties` (AVD) ou IP da LAN.  
+3. Rode em Android 10+ (API 29).  
+4. Use um código de pairing (ex.: `ABC123` após o seed).  
+5. Após parear, a `PlayerActivity` entra em modo kiosk / launcher.
 
 ### Offline e kiosk
 

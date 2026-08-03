@@ -9,6 +9,7 @@ build/
 .next/
 out/
 *.tsbuildinfo
+releases/edge/**/*.apk
 
 # Env
 .env
@@ -30,8 +31,11 @@ apps/edge-android/.gradle/
 apps/edge-android/build/
 apps/edge-android/app/build/
 apps/edge-android/local.properties
+apps/edge-android/keystore/*.jks
+apps/edge-android/dist/
 *.apk
 *.aab
+*.jks
 
 # Logs / coverage
 coverage/

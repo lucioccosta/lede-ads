@@ -15,8 +15,8 @@ Guia para subir **LEDE Ads** (web + API + Postgres) no [Dokploy](https://dokploy
 
 Crie dois registros apontando para o servidor Dokploy:
 
-- `app.seudominio.com` → front (Cloud Web)
-- `api.seudominio.com` → API (Edge e browser usam esta URL)
+- `app.lede.tv.br` → front (Cloud Web)
+- `api.lede.tv.br` → API (Edge e browser usam esta URL)
 
 ## 2. Criar aplicação Compose
 
@@ -45,15 +45,15 @@ POSTGRES_DB=lede_ads
 
 JWT_SECRET=<segredo-longo>
 JWT_EXPIRES_IN=7d
-PUBLIC_BASE_URL=https://api.seudominio.com
-CORS_ORIGIN=https://app.seudominio.com
+PUBLIC_BASE_URL=https://api.lede.tv.br
+CORS_ORIGIN=https://app.lede.tv.br
 
 RUN_SEED=true
 SEED_ADMIN_EMAIL=admin@lede.com
 SEED_ADMIN_PASSWORD=<senha-admin>
 SEED_ADMIN_NAME=Admin LEDE
 
-NEXT_PUBLIC_API_URL=https://api.seudominio.com
+NEXT_PUBLIC_API_URL=https://api.lede.tv.br
 
 # S3 (Eveo)
 STORAGE_DRIVER=s3
@@ -80,8 +80,8 @@ No Dokploy, vincule:
 
 | Service | Port | Domain |
 |---------|------|--------|
-| `web` | `3000` | `app.seudominio.com` |
-| `api` | `3001` | `api.seudominio.com` |
+| `web` | `3000` | `app.lede.tv.br` |
+| `api` | `3001` | `api.lede.tv.br` |
 
 Ative HTTPS (Let's Encrypt) nos dois.
 
@@ -89,7 +89,7 @@ Ative HTTPS (Let's Encrypt) nos dois.
 
 1. **Deploy** / **Rebuild**
 2. Aguarde build da API e do Web
-3. Login: `https://app.seudominio.com` com o admin do seed
+3. Login: `https://app.lede.tv.br` com o admin do seed
 4. Desative o seed: `RUN_SEED=false` → Save → Redeploy (ou só Restart se a imagem não mudar)
 
 ## 6. Edge Android
@@ -97,10 +97,10 @@ Ative HTTPS (Let's Encrypt) nos dois.
 Em `apps/edge-android/.../build.gradle.kts` (ou flavor de release):
 
 ```
-API_BASE_URL = "https://api.seudominio.com/api"
+API_BASE_URL = "https://api.lede.tv.br/api"
 ```
 
-Mídias e screenshots usam `PUBLIC_BASE_URL` (ex.: `https://api.seudominio.com/uploads/...`).
+Mídias e screenshots usam `PUBLIC_BASE_URL` (ex.: `https://api.lede.tv.br/uploads/...`).
 
 ## 7. Volumes e S3
 
