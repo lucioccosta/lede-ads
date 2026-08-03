@@ -15,11 +15,13 @@ import { UploadsModule } from './uploads/uploads.module';
 import { ScreenTypesModule } from './screen-types/screen-types.module';
 import { UsersModule } from './users/users.module';
 import { HistoryModule } from './history/history.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    StorageModule,
     AuthModule,
     ClientsModule,
     UsersModule,

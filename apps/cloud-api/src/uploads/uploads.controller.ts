@@ -7,37 +7,24 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { randomBytes, createHash } from 'crypto';
-import { existsSync, mkdirSync } from 'fs';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { publicBaseUrl } from '../common/public-url';
 import { isActingAsClient, requireClientId } from '../common/condo-access';
-
-const uploadsDir = join(process.cwd(), 'uploads');
-
-if (!existsSync(uploadsDir)) {
-  mkdirSync(uploadsDir, { recursive: true });
-}
+import { StorageService } from '../storage/storage.service';
 
 @Controller('uploads')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UploadsController {
+  constructor(private readonly storage: StorageService) {}
+
   @Post()
   @Roles('lede_admin', 'lede_operator', 'client_approver')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: uploadsDir,
-        filename: (_req, file, cb) => {
-          const id = randomBytes(8).toString('hex');
-          cb(null, `${id}${extname(file.originalname).toLowerCase()}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 80 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         const ok =
@@ -47,7 +34,7 @@ export class UploadsController {
       },
     }),
   )
-  upload(
+  async upload(
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: {
       role: string;
@@ -59,17 +46,18 @@ export class UploadsController {
       requireClientId(user);
     }
     if (!file) throw new BadRequestException('Arquivo obrigatório');
-    const checksum = createHash('sha256')
-      .update(`${file.filename}:${file.size}`)
-      .digest('hex');
+
+    const stored = await this.storage.putMulterFile(file, 'media');
     const type = file.mimetype.startsWith('video/') ? 'video' : 'image';
+
     return {
-      url: `${publicBaseUrl()}/uploads/${file.filename}`,
-      mimeType: file.mimetype,
-      fileSize: file.size,
-      checksum,
+      url: stored.url,
+      mimeType: stored.mimeType,
+      fileSize: stored.fileSize,
+      checksum: stored.checksum,
       type,
       originalName: file.originalname,
+      key: stored.key,
     };
   }
 }

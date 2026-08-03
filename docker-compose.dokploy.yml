@@ -1,0 +1,95 @@
+# Deploy Dokploy — tipo "Docker Compose"
+# Compose path: docker-compose.dokploy.yml
+# Environment: cole o conteúdo de .env.dokploy.example (ajuste URLs/senhas)
+#
+# Domínios no Dokploy:
+#   - service `web` → porta 3000  (ex.: app.seudominio.com)
+#   - service `api` → porta 3001  (ex.: api.seudominio.com)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lede}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-lede_ads}
+    volumes:
+      - lede_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lede-internal
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lede}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lede_ads}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?defina PUBLIC_BASE_URL}
+      CORS_ORIGIN: ${CORS_ORIGIN:?defina CORS_ORIGIN}
+      RUN_SEED: ${RUN_SEED:-false}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@lede.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Admin LEDE}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_TENANT: ${S3_TENANT:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_ACL: ${S3_ACL:-}
+    # Porta do container para o domínio no Dokploy
+    expose:
+      - "3001"
+    networks:
+      - lede-internal
+      - dokploy-network
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?defina NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    expose:
+      - "3000"
+    networks:
+      - lede-internal
+      - dokploy-network
+
+volumes:
+  lede_postgres_data:
+
+networks:
+  lede-internal:
+    driver: bridge
+  dokploy-network:
+    external: true

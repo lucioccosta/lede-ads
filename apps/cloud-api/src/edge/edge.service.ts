@@ -13,7 +13,7 @@ import {
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { zonedDayBounds, zonedParts } from '../common/timezone';
-import { publicBaseUrl, toPublicUrl } from '../common/public-url';
+import { toPublicUrl } from '../common/public-url';
 import {
   AckCommandDto,
   HeartbeatDto,
@@ -496,9 +496,8 @@ export class EdgeService {
     return { ok: true };
   }
 
-  async screenshotUpload(token: string, filename: string) {
+  async screenshotUpload(token: string, url: string) {
     const device = await this.byToken(token);
-    const url = `${publicBaseUrl()}/uploads/screenshots/${filename}`;
     await this.prisma.device.update({
       where: { id: device.id },
       data: { lastScreenshotUrl: url },

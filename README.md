@@ -53,7 +53,25 @@ npm run dev
 | Cloud Web | http://localhost:3000 |
 | API       | http://localhost:3001/api |
 
-Arquivos enviados ficam em `apps/cloud-api/uploads/` (gitignored) e são servidos em `/uploads/…`.
+### Storage (S3 / Eveo)
+
+Mídias e screenshots usam o driver configurável:
+
+| Variável | Exemplo |
+|----------|---------|
+| `STORAGE_DRIVER` | `s3` (padrão em prod) ou `local` |
+| `S3_ENDPOINT` | `https://object.sp2.eveo.com.br` |
+| `S3_BUCKET` | `lede-arquivos` |
+| `S3_TENANT` | `48806696000174` |
+| `S3_PUBLIC_URL` | `https://object.sp2.eveo.com.br/48806696000174:lede-arquivos` |
+| `S3_FORCE_PATH_STYLE` | `true` |
+
+URL pública de um objeto:  
+`{S3_PUBLIC_URL}/media/...` ou `/screenshots/...`  
+
+Credenciais (`S3_ACCESS_KEY` / `S3_SECRET_KEY`) só em `.env` / Dokploy — nunca no Git.  
+Fallback: `STORAGE_DRIVER=local` → pasta `apps/cloud-api/uploads/`.  
+Detalhes: [docs/STORAGE.md](docs/STORAGE.md).
 
 ### Logins demo (após seed)
 
@@ -190,11 +208,25 @@ Em **Telas**: Re-sync / Screenshot / Reiniciar — entregues no próximo heartbe
 - [x] Troca de senha pelo próprio usuário  
 - [x] Edge: pairing, sync split, offline, PoP, heartbeat, screenshot, kiosk  
 - [x] Monitoramento online/offline  
+- [x] Storage S3 (Eveo) + fallback local  
+- [x] Docker / Dokploy (compose + Dockerfiles)  
+
+## Deploy (Dokploy)
+
+Stack pronta em Docker Compose:
+
+| Arquivo | Uso |
+|---------|-----|
+| `docker-compose.dokploy.yml` | Postgres + API + Web |
+| `docker/api.Dockerfile` / `docker/web.Dockerfile` | Imagens |
+| `.env.dokploy.example` | Modelo de variáveis (inclui S3) |
+| [docs/DOKPLOY.md](docs/DOKPLOY.md) | Guia completo |
+
+Resumo: app **Compose** no Dokploy → path `docker-compose.dokploy.yml` → envs (API, CORS, S3) → domínios `web:3000` e `api:3001` → primeiro deploy com `RUN_SEED=true`.
 
 ## Próximos passos sugeridos
 
 - Validação em device físico (elevador split + cota PoP)  
-- Deploy (API, web, Postgres) e mídias em S3/CDN  
 - Notificações de mídia pendente  
 - Harden de secrets e Device Owner em frota  
 
@@ -203,9 +235,10 @@ Em **Telas**: Re-sync / Screenshot / Reiniciar — entregues no próximo heartbe
 ## Scripts úteis (raiz)
 
 ```bash
-npm run dev:web    # Next.js
-npm run dev:api    # Nest watch
-npm run docker:up  # Postgres (compose)
+npm run dev:web              # Next.js
+npm run dev:api              # Nest watch
+npm run docker:up            # Postgres local (compose)
+npm run docker:dokploy:build # Build das imagens de produção
 ```
 
 Seed / migrate (API):

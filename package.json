@@ -12,6 +12,7 @@
     "dev:api": "npm run start:dev -w apps/cloud-api",
     "build": "npm run build --workspaces --if-present",
     "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "docker:dokploy:build": "docker compose -f docker-compose.dokploy.yml build"
   }
 }
