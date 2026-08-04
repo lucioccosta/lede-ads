@@ -33,6 +33,10 @@ function serializeDevice(device: Device | DeviceWithRels) {
   return {
     ...device,
     freeStorageBytes: device.freeStorageBytes?.toString() ?? null,
+    totalStorageBytes: device.totalStorageBytes?.toString() ?? null,
+    ramAvailBytes: device.ramAvailBytes?.toString() ?? null,
+    ramTotalBytes: device.ramTotalBytes?.toString() ?? null,
+    uptimeMs: device.uptimeMs?.toString() ?? null,
   };
 }
 
@@ -221,6 +225,11 @@ export class DevicesService {
         lastScreenshotUrl: null,
         appVersion: null,
         freeStorageBytes: null,
+        totalStorageBytes: null,
+        ramAvailBytes: null,
+        ramTotalBytes: null,
+        cpuUsagePercent: null,
+        uptimeMs: null,
         ipAddress: null,
         screenWidth: null,
         screenHeight: null,

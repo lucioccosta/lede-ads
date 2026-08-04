@@ -16,6 +16,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.lede.edge.KioskPolicy
 import com.lede.edge.data.DeviceStore
+import com.lede.edge.data.DeviceTelemetryCollector
 import com.lede.edge.data.DeviceUnauthorizedException
 import com.lede.edge.data.EdgeApi
 import com.lede.edge.data.ManifestStore
@@ -26,6 +27,10 @@ import com.lede.edge.data.RemoteCommand
 import com.lede.edge.data.SyncScene
 import com.lede.edge.databinding.ActivityPlayerBinding
 import android.content.Intent
+import android.os.SystemClock
+import android.provider.Settings
+import android.view.KeyEvent
+import android.widget.Toast
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,14 +55,21 @@ class PlayerActivity : AppCompatActivity() {
     private var capturingScreenshot = false
     private var offlineMode = false
 
+    /** Escape do kiosk: Voltar ×7 em 3s, ou Volume+ segurado + Voltar ×3. */
+    private var escapeBackCount = 0
+    private var escapeWindowStart = 0L
+    private var volumeUpHeld = false
+    private var escapingKiosk = false
+
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
             val token = store.deviceToken ?: return
             lifecycleScope.launch {
                 runCatching {
+                    val telemetry = DeviceTelemetryCollector.collect(this@PlayerActivity)
                     val result = api.heartbeat(
                         token,
-                        filesDir.usableSpace,
+                        telemetry,
                         TimeZone.getDefault().id,
                     )
                     popQueue.flush(api, token)
@@ -120,9 +132,70 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (escapingKiosk) return
         KioskPolicy.applyIfOwner(this)
         enterKioskMode()
         runCatching { startLockTask() }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                volumeUpHeld = event.action != KeyEvent.ACTION_UP
+            }
+            KeyEvent.KEYCODE_BACK -> {
+                if (event.action == KeyEvent.ACTION_UP && registerEscapeBack()) {
+                    escapeKiosk()
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * Combinações de emergência para sair do kiosk:
+     * 1) Segure Volume+ e aperte Voltar 3 vezes (em até 3s)
+     * 2) Aperte Voltar 7 vezes seguidas (em até 3s)
+     */
+    private fun registerEscapeBack(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - escapeWindowStart > ESCAPE_WINDOW_MS) {
+            escapeBackCount = 0
+            escapeWindowStart = now
+        }
+        escapeBackCount += 1
+        val needed = if (volumeUpHeld) ESCAPE_BACK_WITH_VOLUME else ESCAPE_BACK_ONLY
+        return escapeBackCount >= needed
+    }
+
+    private fun escapeKiosk() {
+        if (escapingKiosk) return
+        escapingKiosk = true
+        escapeBackCount = 0
+        volumeUpHeld = false
+
+        handler.removeCallbacks(heartbeatRunnable)
+        handler.removeCallbacks(syncRunnable)
+        handler.removeCallbacks(screenshotRunnable)
+
+        runCatching { stopLockTask() }
+
+        Toast.makeText(
+            this,
+            "Saindo do kiosk… escolha outro launcher se pedir",
+            Toast.LENGTH_LONG,
+        ).show()
+
+        val homeSettings = Intent(Settings.ACTION_HOME_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val settings = Intent(Settings.ACTION_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        runCatching { startActivity(homeSettings) }
+            .recoverCatching { startActivity(settings) }
+
+        finishAffinity()
     }
 
     private suspend fun handleCommand(token: String, command: RemoteCommand) {
@@ -172,10 +245,11 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) enterKioskMode()
+        if (hasFocus && !escapingKiosk) enterKioskMode()
     }
 
     private fun enterKioskMode() {
+        if (escapingKiosk) return
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -407,5 +481,11 @@ class PlayerActivity : AppCompatActivity() {
         runCatching { stopLockTask() }
         composer.clear(binding.zoneContainer)
         super.onDestroy()
+    }
+
+    companion object {
+        private const val ESCAPE_WINDOW_MS = 3_000L
+        private const val ESCAPE_BACK_ONLY = 7
+        private const val ESCAPE_BACK_WITH_VOLUME = 3
     }
 }

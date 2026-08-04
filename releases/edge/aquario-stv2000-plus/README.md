@@ -22,12 +22,16 @@ Veja o APK na [última release Edge](https://github.com/lucioccosta/lede-ads/rel
 2. Ative **Fontes desconhecidas** / **Instalar apps desconhecidos**.
 3. Abra o APK e confirme a instalação.
 4. Abra **LEDE Edge** e pareie com o código do painel (`https://app.lede.tv.br`).
-5. Se o box perguntar o launcher padrão, escolha **LEDE Edge**.
+5. Se o box perguntar o launcher padrão, escolha **LEDE Edge** (só em sinalização).
+
+### Sair do kiosk (v0.3.2+)
+
+Volume+ + Voltar ×3, ou Voltar ×7 — ver [`docs/EDGE.md`](../../../docs/EDGE.md).
 
 ### ADB (opcional)
 
 ```bash
-adb install -r lede-edge-aquario-stv2000-plus-v0.2.0.apk
+adb install -r lede-edge-aquario-stv2000-plus-v0.3.2.apk
 ```
 
 ## Build local

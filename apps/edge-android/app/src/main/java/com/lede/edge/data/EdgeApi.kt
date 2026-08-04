@@ -61,12 +61,19 @@ class EdgeApi {
 
     suspend fun heartbeat(
         token: String,
-        freeBytes: Long,
+        telemetry: DeviceTelemetry,
         timezone: String? = null,
     ): HeartbeatResult = withContext(Dispatchers.IO) {
         val bodyJson = JSONObject()
             .put("appVersion", BuildConfig.VERSION_NAME)
-            .put("freeStorageBytes", freeBytes)
+            .put("freeStorageBytes", telemetry.freeStorageBytes)
+            .put("totalStorageBytes", telemetry.totalStorageBytes)
+            .put("ramAvailBytes", telemetry.ramAvailBytes)
+            .put("ramTotalBytes", telemetry.ramTotalBytes)
+            .put("uptimeMs", telemetry.uptimeMs)
+        telemetry.cpuUsagePercent?.let {
+            bodyJson.put("cpuUsagePercent", (it * 10).toInt() / 10.0)
+        }
         if (!timezone.isNullOrBlank()) bodyJson.put("timezone", timezone)
         val body = bodyJson.toString().toRequestBody(json)
         val req = Request.Builder()

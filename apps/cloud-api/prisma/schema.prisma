@@ -256,6 +256,11 @@ model Device {
   lastScreenshotUrl String?
   appVersion        String?
   freeStorageBytes  BigInt?
+  totalStorageBytes BigInt?
+  ramAvailBytes     BigInt?
+  ramTotalBytes     BigInt?
+  cpuUsagePercent   Float?
+  uptimeMs          BigInt?
   ipAddress         String?
   screenWidth       Int?
   screenHeight      Int?

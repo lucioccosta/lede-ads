@@ -87,7 +87,11 @@ export default function CapacityPage() {
             Inventário de anúncios por grupo (18h × slots de 10s × telas)
           </p>
         </div>
-        <Button variant="outline" render={<Link href="/dashboard/device-groups" />}>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link href="/dashboard/device-groups" />}
+        >
           Grupos de telas
         </Button>
       </div>

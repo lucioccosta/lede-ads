@@ -180,21 +180,25 @@ Prefixo global: `/api`.
 
 ## Edge Android
 
-Artefatos por dispositivo em [`releases/edge/`](releases/edge/) — downloads nas [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases).
+Guia completo: [`docs/EDGE.md`](docs/EDGE.md)  
+Artefatos: [`releases/edge/`](releases/edge/) — APKs de produção nas [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases).
 
-| Tipo | Pasta | Dispositivo |
-|------|-------|-------------|
-| Aquario | [`aquario-stv2000-plus`](releases/edge/aquario-stv2000-plus/) | STV-2000 Plus 4 (Android 10) |
+| Ambiente | Pasta | Package | API |
+|----------|-------|---------|-----|
+| Casa (dev) | [`casa`](releases/edge/casa/) | `com.lede.edge.casa` | `http://192.168.10.142:3001/api` |
+| Fios (dev) | [`fios`](releases/edge/fios/) | `com.lede.edge.fios` | `http://192.168.55.2:3001/api` |
+| Prod / Aquario | [`aquario-stv2000-plus`](releases/edge/aquario-stv2000-plus/) | `com.lede.edge` | `https://api.lede.tv.br/api` |
 
-**Produção:** o APK de release aponta para `https://api.lede.tv.br/api`.
+```bash
+cd apps/edge-android
+./gradlew exportCasaApk      # LAN casa
+./gradlew exportFiosApk      # LAN fios
+./gradlew exportSideloadApk  # produção
+```
 
-Desenvolvimento local:
-
-1. Abra `apps/edge-android` no Android Studio.  
-2. Override: `lede.apiBaseUrl=http://10.0.2.2:3001/api` em `local.properties` (AVD) ou IP da LAN.  
-3. Rode em Android 10+ (API 29).  
-4. Use um código de pairing (ex.: `ABC123` após o seed).  
-5. Após parear, a `PlayerActivity` entra em modo kiosk / launcher.
+Após parear, o player entra em kiosk (Home + lock task).  
+**Sair (v0.3.2+):** Volume+ segurado + Voltar ×3, ou Voltar ×7.  
+Telemetria no heartbeat: CPU, RAM, disco, uptime — visível em **Telas**.
 
 ### Offline e kiosk
 
@@ -206,7 +210,8 @@ Desenvolvimento local:
 #### Device Owner (opcional)
 
 ```bash
-adb shell dpm set-device-owner com.lede.edge/.LedeDeviceAdminReceiver
+adb shell dpm set-device-owner com.lede.edge.casa/.LedeDeviceAdminReceiver
+# prod: com.lede.edge/.LedeDeviceAdminReceiver
 ```
 
 Habilita reboot remoto via DPM. Sem Device Owner, o kiosk imersivo continua; o comando Reiniciar pode falhar.
@@ -229,6 +234,8 @@ Em **Telas**: Re-sync / Screenshot / Reiniciar — entregues no próximo heartbe
 - [x] Histórico de modificações (portal + dashboard)  
 - [x] Troca de senha pelo próprio usuário  
 - [x] Edge: pairing, sync split, offline, PoP, heartbeat, screenshot, kiosk, rotação 0/90/180/270  
+- [x] Edge: telemetria CPU/RAM/disco/uptime + escape de kiosk (v0.3.2+)  
+- [x] Edge: flavors Casa / Fios / Prod  
 - [x] Monitoramento online/offline + re-parear  
 - [x] Storage S3 (Eveo) + fallback local  
 - [x] Docker / Dokploy (compose + Dockerfiles)  

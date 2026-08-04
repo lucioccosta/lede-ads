@@ -3,15 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-/** Produção (Dokploy). Override release: -Plede.apiBaseUrl=... */
-val PROD_API_BASE_URL = "https://api.lede.tv.br/api"
-
-/** Dev / debug na LAN (Aquario). Override: -Plede.devApiBaseUrl=... ou local.properties */
-val DEV_API_BASE_URL = "http://192.168.55.2:3001/api"
-
-/** Pasta do artefato deste tipo de edge (relativa à raiz do monorepo). */
-val EDGE_RELEASE_DIR = "releases/edge/aquario-stv2000-plus"
-val EDGE_APK_PREFIX = "lede-edge-aquario-stv2000-plus"
+/** Pastas de artefato (relativas à raiz do monorepo). */
+val EDGE_DEVICE_DIR = "releases/edge/aquario-stv2000-plus"
+val EDGE_CASA_DIR = "releases/edge/casa"
+val EDGE_FIOS_DIR = "releases/edge/fios"
 
 fun readLocalProp(key: String): String? {
     val localFile = rootProject.file("local.properties")
@@ -26,25 +21,19 @@ fun readLocalProp(key: String): String? {
     return null
 }
 
-fun readApiBaseUrl(forDebug: Boolean): String {
-    if (forDebug) {
-        val fromProp = project.findProperty("lede.devApiBaseUrl") as String?
-        if (!fromProp.isNullOrBlank()) return fromProp.trim()
-        readLocalProp("lede.devApiBaseUrl")?.let { return it }
-        return DEV_API_BASE_URL
-    }
-
-    val fromProp = project.findProperty("lede.apiBaseUrl") as String?
+fun apiUrl(propKey: String, default: String): String {
+    val fromProp = project.findProperty(propKey) as String?
     if (!fromProp.isNullOrBlank()) return fromProp.trim()
-    readLocalProp("lede.apiBaseUrl")?.let { return it }
-    return PROD_API_BASE_URL
+    readLocalProp(propKey)?.let { return it }
+    return default
 }
+
+val prodApi = apiUrl("lede.apiBaseUrl", "https://api.lede.tv.br/api")
+val casaApi = apiUrl("lede.casaApiBaseUrl", "http://192.168.10.142:3001/api")
+val fiosApi = apiUrl("lede.fiosApiBaseUrl", "http://192.168.55.2:3001/api")
 
 fun repoRoot(): java.io.File =
     rootProject.projectDir.resolve("../..").normalize()
-
-val releaseApiBaseUrl = readApiBaseUrl(forDebug = false)
-val debugApiBaseUrl = readApiBaseUrl(forDebug = true)
 
 android {
     namespace = "com.lede.edge"
@@ -55,12 +44,36 @@ android {
         // Aquario STV-2000 Plus = Android 10 (API 29), ARM Cortex-A53
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
-        buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
+        versionCode = 5
+        versionName = "0.3.2"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
+    }
+
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+            buildConfigField("String", "API_BASE_URL", "\"$prodApi\"")
+            buildConfigField("String", "ENV_NAME", "\"prod\"")
+        }
+        create("casa") {
+            dimension = "env"
+            applicationIdSuffix = ".casa"
+            versionNameSuffix = "-casa"
+            resValue("string", "app_name", "LEDE Edge Casa")
+            buildConfigField("String", "API_BASE_URL", "\"$casaApi\"")
+            buildConfigField("String", "ENV_NAME", "\"casa\"")
+        }
+        create("fios") {
+            dimension = "env"
+            applicationIdSuffix = ".fios"
+            versionNameSuffix = "-fios"
+            resValue("string", "app_name", "LEDE Edge Fios")
+            buildConfigField("String", "API_BASE_URL", "\"$fiosApi\"")
+            buildConfigField("String", "ENV_NAME", "\"fios\"")
         }
     }
 
@@ -78,9 +91,9 @@ android {
 
     buildTypes {
         debug {
+            // debug + flavor: ex. com.lede.edge.casa.debug
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            buildConfigField("String", "API_BASE_URL", "\"$debugApiBaseUrl\"")
         }
         release {
             isMinifyEnabled = false
@@ -93,7 +106,6 @@ android {
             if (sideload?.storeFile?.exists() == true) {
                 signingConfig = sideload
             }
-            buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
         }
     }
 
@@ -132,16 +144,53 @@ dependencies {
     implementation("io.coil-kt:coil:2.5.0")
 }
 
-tasks.register<Copy>("exportSideloadApk") {
-    dependsOn("assembleRelease")
-    from(layout.buildDirectory.dir("outputs/apk/release"))
-    include("*.apk")
-    into(repoRoot().resolve(EDGE_RELEASE_DIR))
-    rename { "$EDGE_APK_PREFIX-v${android.defaultConfig.versionName}.apk" }
-    doLast {
-        val out = repoRoot().resolve(EDGE_RELEASE_DIR)
-            .resolve("$EDGE_APK_PREFIX-v${android.defaultConfig.versionName}.apk")
-        println("APK: $out")
-        println("API_BASE_URL=$releaseApiBaseUrl")
+fun registerExportApk(
+    taskName: String,
+    assembleTask: String,
+    apkDirVariant: String,
+    outRelDir: String,
+    apkFileName: String,
+    apiUrl: String,
+) {
+    tasks.register<Copy>(taskName) {
+        dependsOn(assembleTask)
+        from(layout.buildDirectory.dir("outputs/apk/$apkDirVariant"))
+        include("*.apk")
+        into(repoRoot().resolve(outRelDir))
+        rename { apkFileName }
+        doLast {
+            val out = repoRoot().resolve(outRelDir).resolve(apkFileName)
+            println("APK: $out")
+            println("API_BASE_URL=$apiUrl")
+        }
     }
 }
+
+val versionName = android.defaultConfig.versionName
+
+registerExportApk(
+    taskName = "exportSideloadApk",
+    assembleTask = "assembleProdRelease",
+    apkDirVariant = "prod/release",
+    outRelDir = EDGE_DEVICE_DIR,
+    apkFileName = "lede-edge-aquario-stv2000-plus-v$versionName.apk",
+    apiUrl = prodApi,
+)
+
+registerExportApk(
+    taskName = "exportCasaApk",
+    assembleTask = "assembleCasaRelease",
+    apkDirVariant = "casa/release",
+    outRelDir = EDGE_CASA_DIR,
+    apkFileName = "lede-edge-casa-v$versionName-casa.apk",
+    apiUrl = casaApi,
+)
+
+registerExportApk(
+    taskName = "exportFiosApk",
+    assembleTask = "assembleFiosRelease",
+    apkDirVariant = "fios/release",
+    outRelDir = EDGE_FIOS_DIR,
+    apkFileName = "lede-edge-fios-v$versionName-fios.apk",
+    apiUrl = fiosApi,
+)

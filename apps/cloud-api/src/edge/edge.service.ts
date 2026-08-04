@@ -584,6 +584,19 @@ export class EdgeService {
         lastHeartbeatAt: new Date(),
         appVersion: dto.appVersion,
         freeStorageBytes: BigInt(dto.freeStorageBytes),
+        ...(dto.totalStorageBytes != null
+          ? { totalStorageBytes: BigInt(dto.totalStorageBytes) }
+          : {}),
+        ...(dto.ramAvailBytes != null
+          ? { ramAvailBytes: BigInt(dto.ramAvailBytes) }
+          : {}),
+        ...(dto.ramTotalBytes != null
+          ? { ramTotalBytes: BigInt(dto.ramTotalBytes) }
+          : {}),
+        ...(dto.cpuUsagePercent != null
+          ? { cpuUsagePercent: dto.cpuUsagePercent }
+          : {}),
+        ...(dto.uptimeMs != null ? { uptimeMs: BigInt(dto.uptimeMs) } : {}),
         ipAddress: dto.ipAddress,
         screenWidth: dto.screenWidth,
         screenHeight: dto.screenHeight,

@@ -1,8 +1,10 @@
 import {
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
@@ -24,6 +26,32 @@ export class HeartbeatDto {
   @IsInt()
   @Min(0)
   freeStorageBytes!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  totalStorageBytes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  ramAvailBytes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  ramTotalBytes?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  cpuUsagePercent?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  uptimeMs?: number;
 
   @IsOptional()
   @IsString()

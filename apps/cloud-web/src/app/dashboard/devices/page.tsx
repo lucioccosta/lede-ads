@@ -30,7 +30,21 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/empty-state";
 import { ListToolbar } from "@/components/list-toolbar";
 import { toast } from "sonner";
-import { MonitorIcon } from "lucide-react";
+import {
+  Building2Icon,
+  ClockIcon,
+  CpuIcon,
+  HardDriveIcon,
+  HeartPulseIcon,
+  LayersIcon,
+  LayoutTemplateIcon,
+  MemoryStickIcon,
+  MonitorIcon,
+  PackageIcon,
+  RotateCwSquareIcon,
+  TimerIcon,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 type Device = {
   id: string;
@@ -58,6 +72,12 @@ type Device = {
   lastHeartbeatAt: string | null;
   lastScreenshotUrl: string | null;
   appVersion: string | null;
+  freeStorageBytes?: string | null;
+  totalStorageBytes?: string | null;
+  ramAvailBytes?: string | null;
+  ramTotalBytes?: string | null;
+  cpuUsagePercent?: number | null;
+  uptimeMs?: string | null;
 };
 
 type Client = { id: string; name: string };
@@ -99,6 +119,9 @@ const orientationLabel = Object.fromEntries(
   ORIENTATIONS.map((o) => [o.value, o.label]),
 ) as Record<DeviceOrientation, string>;
 
+const timezoneLabel = Object.fromEntries(
+  TIMEZONES.map((t) => [t.value, t.label]),
+) as Record<string, string>;
 
 const commandLabel: Record<string, string> = {
   resync: "Re-sync",
@@ -111,6 +134,117 @@ const statusLabel: Record<string, string> = {
   done: "Concluído",
   failed: "Falhou",
 };
+
+function formatBytes(value?: string | null) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
+}
+
+function formatUptime(value?: string | null) {
+  if (value == null || value === "") return "—";
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function parseBytes(value?: string | null) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function usedPct(freeOrAvail?: string | null, total?: string | null) {
+  const avail = parseBytes(freeOrAvail);
+  const tot = parseBytes(total);
+  if (avail == null || tot == null || tot <= 0) return null;
+  return Math.min(100, Math.max(0, ((tot - avail) / tot) * 100));
+}
+
+function barTone(pct: number | null) {
+  if (pct == null) return "bg-muted-foreground/40";
+  if (pct >= 90) return "bg-destructive";
+  if (pct >= 75) return "bg-amber-500";
+  return "bg-primary";
+}
+
+function MetricCell({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  pct,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  detail?: string;
+  pct?: number | null;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        <Icon className="size-3.5 shrink-0" />
+        <span className="text-[11px] font-medium uppercase tracking-wide">
+          {label}
+        </span>
+      </div>
+      <p className="truncate text-sm font-semibold text-foreground">{value}</p>
+      {detail ? (
+        <p className="truncate text-[11px] text-muted-foreground">{detail}</p>
+      ) : null}
+      {pct != null ? (
+        <div className="h-1.5 overflow-hidden rounded-full bg-background">
+          <div
+            className={`h-full rounded-full transition-all ${barTone(pct)}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MetaRow({
+  icon: Icon,
+  label,
+  value,
+  mono,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <span className="text-muted-foreground">{label}: </span>
+        <span
+          className={`text-foreground ${mono ? "font-mono text-xs" : ""}`}
+        >
+          {value}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function DevicesPage() {
   const [items, setItems] = useState<Device[]>([]);
@@ -374,51 +508,6 @@ export default function DevicesPage() {
       toast.error(err instanceof Error ? err.message : "Erro ao re-parear");
     } finally {
       setBusyId(null);
-    }
-  }
-
-  async function updateTimezone(deviceId: string, next: string) {
-    try {
-      await api(`/devices/${deviceId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ timezone: next }),
-      });
-      toast.success("Timezone atualizado");
-      await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao atualizar");
-    }
-  }
-
-  async function updateOrientation(deviceId: string, next: DeviceOrientation) {
-    try {
-      await api(`/devices/${deviceId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ orientation: next }),
-      });
-      toast.success(
-        `${orientationLabel[next]} — peça Re-sync no device`,
-      );
-      await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao atualizar");
-    }
-  }
-
-  async function patchDevice(
-    deviceId: string,
-    body: Record<string, unknown>,
-    okMsg: string,
-  ) {
-    try {
-      await api(`/devices/${deviceId}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
-      toast.success(okMsg);
-      await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao atualizar");
     }
   }
 
@@ -778,137 +867,108 @@ export default function DevicesPage() {
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <CardContent className="space-y-3 text-sm">
                   {d.pairingCode && (
-                    <p>
-                      Pairing:{" "}
-                      <span className="font-mono text-foreground">
-                        {d.pairingCode}
-                      </span>
-                    </p>
+                    <MetaRow
+                      icon={PackageIcon}
+                      label="Pairing"
+                      value={d.pairingCode}
+                      mono
+                    />
                   )}
-                  <p>
-                    Heartbeat:{" "}
-                    {d.lastHeartbeatAt
-                      ? new Date(d.lastHeartbeatAt).toLocaleString("pt-BR")
-                      : "nunca"}
-                  </p>
-                  <p>App: {d.appVersion ?? "—"}</p>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Timezone</Label>
-                    <Select
-                      value={d.timezone || "America/Manaus"}
-                      onValueChange={(v) => {
-                        if (v) void updateTimezone(d.id, v);
-                      }}
-                      items={Object.fromEntries(
-                        TIMEZONES.map((t) => [t.value, t.label]),
-                      )}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TIMEZONES.map((t) => (
-                          <SelectItem key={t.value} value={t.value}>
-                            {t.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <MetricCell
+                      icon={CpuIcon}
+                      label="CPU"
+                      value={
+                        d.cpuUsagePercent != null
+                          ? `${d.cpuUsagePercent.toFixed(1)}%`
+                          : "—"
+                      }
+                      pct={d.cpuUsagePercent ?? null}
+                    />
+                    <MetricCell
+                      icon={MemoryStickIcon}
+                      label="RAM"
+                      value={
+                        d.ramTotalBytes != null
+                          ? formatBytes(d.ramTotalBytes)
+                          : "—"
+                      }
+                      detail={
+                        d.ramAvailBytes != null
+                          ? `${formatBytes(d.ramAvailBytes)} livres`
+                          : undefined
+                      }
+                      pct={usedPct(d.ramAvailBytes, d.ramTotalBytes)}
+                    />
+                    <MetricCell
+                      icon={HardDriveIcon}
+                      label="Disco"
+                      value={
+                        d.totalStorageBytes != null
+                          ? formatBytes(d.totalStorageBytes)
+                          : "—"
+                      }
+                      detail={
+                        d.freeStorageBytes != null
+                          ? `${formatBytes(d.freeStorageBytes)} livres`
+                          : undefined
+                      }
+                      pct={usedPct(d.freeStorageBytes, d.totalStorageBytes)}
+                    />
+                    <MetricCell
+                      icon={TimerIcon}
+                      label="Uptime"
+                      value={formatUptime(d.uptimeMs)}
+                    />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Orientação</Label>
-                    <Select
-                      value={d.orientation || "landscape"}
-                      onValueChange={(v) => {
-                        if (
-                          v === "portrait" ||
-                          v === "landscape" ||
-                          v === "landscape_reverse" ||
-                          v === "portrait_reverse"
-                        ) {
-                          void updateOrientation(d.id, v);
-                        }
-                      }}
-                      items={Object.fromEntries(
-                        ORIENTATIONS.map((o) => [o.value, o.label]),
-                      )}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ORIENTATIONS.map((o) => (
-                          <SelectItem key={o.value} value={o.value}>
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+
+                  <div className="space-y-1.5 border-t pt-3">
+                    <MetaRow
+                      icon={HeartPulseIcon}
+                      label="Heartbeat"
+                      value={
+                        d.lastHeartbeatAt
+                          ? new Date(d.lastHeartbeatAt).toLocaleString("pt-BR")
+                          : "nunca"
+                      }
+                    />
+                    <MetaRow
+                      icon={PackageIcon}
+                      label="App"
+                      value={d.appVersion ?? "—"}
+                    />
+                    <MetaRow
+                      icon={ClockIcon}
+                      label="Timezone"
+                      value={timezoneLabel[d.timezone] ?? d.timezone ?? "—"}
+                    />
+                    <MetaRow
+                      icon={RotateCwSquareIcon}
+                      label="Orientação"
+                      value={
+                        orientationLabel[d.orientation] ?? d.orientation ?? "—"
+                      }
+                    />
+                    <MetaRow
+                      icon={LayoutTemplateIcon}
+                      label="Tipo"
+                      value={d.screenType?.name ?? "Nenhum"}
+                    />
+                    <MetaRow
+                      icon={Building2Icon}
+                      label="Condomínio"
+                      value={d.client?.name ?? "Nenhum"}
+                    />
+                    <MetaRow
+                      icon={LayersIcon}
+                      label="Grupo"
+                      value={d.group?.name ?? "Nenhum"}
+                    />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Tipo de tela</Label>
-                    <Select
-                      value={d.screenTypeId || "none"}
-                      onValueChange={(v) => {
-                        void patchDevice(
-                          d.id,
-                          { screenTypeId: v === "none" ? null : v },
-                          "Tipo de tela atualizado",
-                        );
-                      }}
-                      items={{
-                        none: "Nenhum",
-                        ...Object.fromEntries(
-                          screenTypes.map((t) => [t.id, t.name]),
-                        ),
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Nenhum</SelectItem>
-                        {screenTypes.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            {t.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Condomínio</Label>
-                    <Select
-                      value={d.clientId || "none"}
-                      onValueChange={(v) => {
-                        void patchDevice(
-                          d.id,
-                          { clientId: v === "none" ? null : v },
-                          "Condomínio atualizado — peça Re-sync",
-                        );
-                      }}
-                      items={{
-                        none: "Nenhum",
-                        ...Object.fromEntries(
-                          clients.map((c) => [c.id, c.name]),
-                        ),
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Nenhum</SelectItem>
-                        {clients.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+
                   <div className="flex flex-wrap gap-2 pt-1">
                     <Button
                       size="sm"
