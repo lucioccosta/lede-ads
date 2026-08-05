@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ScheduleChannel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScheduleDto, UpdateScheduleDto } from './dto/schedule.dto';
@@ -15,6 +19,28 @@ function toChannel(
 @Injectable()
 export class SchedulesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async assertChannelForClient(
+    clientId: string,
+    channel?: 'full' | 'condo' | 'ads',
+  ) {
+    const resolved = channel ?? 'full';
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, isCondo: true },
+    });
+    if (!client) throw new NotFoundException('Cliente não encontrado');
+    if (client.isCondo && resolved === 'ads') {
+      throw new BadRequestException(
+        'Cliente condomínio não pode usar o canal Anúncios LEDE',
+      );
+    }
+    if (!client.isCondo && resolved === 'condo') {
+      throw new BadRequestException(
+        'Cliente anunciante não pode usar o canal Condomínio',
+      );
+    }
+  }
 
   findAll(deviceId?: string, clientId?: string) {
     return this.prisma.schedule.findMany({
@@ -47,7 +73,8 @@ export class SchedulesService {
     return schedule;
   }
 
-  create(dto: CreateScheduleDto) {
+  async create(dto: CreateScheduleDto) {
+    await this.assertChannelForClient(dto.clientId, dto.channel);
     return this.prisma.schedule.create({
       data: {
         name: dto.name,
@@ -68,7 +95,10 @@ export class SchedulesService {
   }
 
   async update(id: string, dto: UpdateScheduleDto) {
-    await this.findOne(id);
+    const current = await this.findOne(id);
+    if (dto.channel !== undefined) {
+      await this.assertChannelForClient(current.clientId, dto.channel);
+    }
     return this.prisma.schedule.update({
       where: { id },
       data: {

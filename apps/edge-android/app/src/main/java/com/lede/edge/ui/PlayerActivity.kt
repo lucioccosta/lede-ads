@@ -26,6 +26,7 @@ import com.lede.edge.data.ProofOfPlayQueue
 import com.lede.edge.data.RemoteCommand
 import com.lede.edge.data.SyncScene
 import com.lede.edge.databinding.ActivityPlayerBinding
+import android.content.ComponentName
 import android.content.Intent
 import android.os.SystemClock
 import android.provider.Settings
@@ -183,19 +184,54 @@ class PlayerActivity : AppCompatActivity() {
 
         Toast.makeText(
             this,
-            "Saindo do kiosk… escolha outro launcher se pedir",
-            Toast.LENGTH_LONG,
+            "Abrindo launcher Aquario…",
+            Toast.LENGTH_SHORT,
         ).show()
 
-        val homeSettings = Intent(Settings.ACTION_HOME_SETTINGS)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val settings = Intent(Settings.ACTION_SETTINGS)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launched = runCatching { startAquarioLauncher() }.isSuccess
+        if (!launched) {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_HOME_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
 
-        runCatching { startActivity(homeSettings) }
-            .recoverCatching { startActivity(settings) }
+        // Remove a task do LEDE para não voltar sozinho ao Home padrão
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask()
+        } else {
+            finishAffinity()
+        }
+    }
 
-        finishAffinity()
+    /** Abre o launcher nativo do STV-2000 Plus. */
+    private fun startAquarioLauncher() {
+        val explicit = Intent(Intent.ACTION_MAIN).apply {
+            component = ComponentName(AQUARIO_LAUNCHER_PACKAGE, AQUARIO_LAUNCHER_ACTIVITY)
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+            )
+        }
+        try {
+            startActivity(explicit)
+            return
+        } catch (_: Exception) {
+            // fallback abaixo
+        }
+
+        val launch = packageManager.getLaunchIntentForPackage(AQUARIO_LAUNCHER_PACKAGE)
+            ?: error("Launcher Aquario não encontrado ($AQUARIO_LAUNCHER_PACKAGE)")
+        launch.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+        )
+        startActivity(launch)
     }
 
     private suspend fun handleCommand(token: String, command: RemoteCommand) {
@@ -487,5 +523,8 @@ class PlayerActivity : AppCompatActivity() {
         private const val ESCAPE_WINDOW_MS = 3_000L
         private const val ESCAPE_BACK_ONLY = 7
         private const val ESCAPE_BACK_WITH_VOLUME = 3
+
+        private const val AQUARIO_LAUNCHER_PACKAGE = "com.br.aquariolauncher"
+        private const val AQUARIO_LAUNCHER_ACTIVITY = "com.br.aquariolauncher.MainActivity"
     }
 }

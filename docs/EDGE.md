@@ -37,7 +37,8 @@ No controle remoto:
 1. **Segure Volume +** e aperte **Voltar** **3** vezes (em até 3 s), **ou**
 2. Aperte **Voltar** **7** vezes seguidas (em até 3 s)
 
-O app encerra o lock task, fecha e abre as configurações de launcher padrão.
+A partir da **v0.3.3**, o escape abre o launcher nativo **Aquario** (`com.br.aquariolauncher`) e remove a task do LEDE.  
+Home de novo (se o LEDE continuar como app inicial) volta ao player.
 
 ### Versões anteriores (sem escape)
 
@@ -70,15 +71,24 @@ Exibidos no dashboard **Telas** (grade com ícones e barras de uso).
 Só um owner por aparelho; idealmente **sem contas** no box (após reset, instale o APK e rode o `dpm` antes de logar Google).
 
 ```bash
-# Casa
-adb shell dpm set-device-owner com.lede.edge.casa/.LedeDeviceAdminReceiver
+# Casa (applicationId ≠ namespace — use o caminho completo da classe)
+adb shell dpm set-device-owner com.lede.edge.casa/com.lede.edge.LedeDeviceAdminReceiver
 
 # Fios
-adb shell dpm set-device-owner com.lede.edge.fios/.LedeDeviceAdminReceiver
+adb shell dpm set-device-owner com.lede.edge.fios/com.lede.edge.LedeDeviceAdminReceiver
 
 # Prod
-adb shell dpm set-device-owner com.lede.edge/.LedeDeviceAdminReceiver
+adb shell dpm set-device-owner com.lede.edge/com.lede.edge.LedeDeviceAdminReceiver
 ```
+
+**Importante (Android 10 / Aquario):** só funciona em box **ainda não provisionado** (idealmente logo após reset de fábrica, **sem** conta Google e **antes** de concluir o setup). Em device já em uso, `dpm set-device-owner` falha mesmo com 0 contas.
+
+Fluxo recomendado:
+1. Reset de fábrica (recovery / Wipe data).
+2. Ligue Wi‑Fi, ative **Opções do desenvolvedor** + **Depuração USB** / ADB rede (pule conta Google se possível).
+3. `adb install` do APK LEDE.
+4. Rode o `dpm set-device-owner` acima **antes** de adicionar contas.
+5. Confirme com `dumpsys device_policy`.
 
 Confirmar:
 

@@ -38,11 +38,12 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 
-type Client = { id: string; name: string }
+type Client = { id: string; name: string; isCondo?: boolean }
 type Scene = { id: string; name: string; clientId: string }
 type Plan = { id: string; name: string; clientId: string }
 type Device = { id: string; name: string }
 type DeviceGroup = { id: string; name: string }
+type ScheduleChannel = "full" | "condo" | "ads"
 type Schedule = {
   id: string
   name: string
@@ -50,7 +51,7 @@ type Schedule = {
   endTime: string
   priority: number
   active: boolean
-  channel: "full" | "condo" | "ads"
+  channel: ScheduleChannel
   clientId: string
   sceneId: string
   planId: string | null
@@ -91,8 +92,42 @@ export default function SchedulesPage() {
   const [startTime, setStartTime] = useState("00:00")
   const [endTime, setEndTime] = useState("23:59")
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
-  const [channel, setChannel] = useState<"full" | "condo" | "ads">("full")
+  const [channel, setChannel] = useState<ScheduleChannel>("full")
   const [search, setSearch] = useState("")
+
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === clientId) ?? null,
+    [clients, clientId],
+  )
+  const clientIsCondo = !!selectedClient?.isCondo
+
+  const channelOptions = useMemo(() => {
+    const options: { value: ScheduleChannel; label: string }[] = [
+      { value: "full", label: "Full (tela inteira)" },
+    ]
+    if (clientIsCondo) {
+      options.push({
+        value: "condo",
+        label: "Condomínio (área exclusiva)",
+      })
+    } else {
+      options.push({ value: "ads", label: "Anúncios LEDE" })
+    }
+    return options
+  }, [clientIsCondo])
+
+  function defaultChannelForClient(isCondo: boolean): ScheduleChannel {
+    return isCondo ? "condo" : "full"
+  }
+
+  function sanitizeChannel(
+    next: ScheduleChannel,
+    isCondo: boolean,
+  ): ScheduleChannel {
+    if (isCondo && next === "ads") return "condo"
+    if (!isCondo && next === "condo") return "full"
+    return next
+  }
 
   async function load() {
     const [schedules, clientList, sceneList, planList, deviceList, groupList] =
@@ -119,10 +154,11 @@ export default function SchedulesPage() {
   function openCreate() {
     setEditing(null)
     setName("")
-    const firstClient = clients[0]?.id ?? ""
-    setClientId(firstClient)
+    const firstClient = clients[0]
+    const firstClientId = firstClient?.id ?? ""
+    setClientId(firstClientId)
     const firstScene =
-      scenes.find((s) => s.clientId === firstClient)?.id ?? ""
+      scenes.find((s) => s.clientId === firstClientId)?.id ?? ""
     setSceneId(firstScene)
     setPlanId("none")
     setDeviceId("all")
@@ -131,7 +167,7 @@ export default function SchedulesPage() {
     setStartTime("00:00")
     setEndTime("23:59")
     setDaysOfWeek([0, 1, 2, 3, 4, 5, 6])
-    setChannel("full")
+    setChannel(defaultChannelForClient(!!firstClient?.isCondo))
     setOpen(true)
   }
 
@@ -140,6 +176,12 @@ export default function SchedulesPage() {
     const nextScenes = scenes.filter((s) => s.clientId === nextClientId)
     setSceneId(nextScenes[0]?.id ?? "")
     setPlanId("none")
+    const nextClient = clients.find((c) => c.id === nextClientId)
+    const isCondo = !!nextClient?.isCondo
+    setChannel((prev) => sanitizeChannel(prev, isCondo))
+    if (isCondo) {
+      setGroupId("none")
+    }
   }
 
   function openEdit(schedule: Schedule) {
@@ -154,7 +196,10 @@ export default function SchedulesPage() {
     setStartTime(schedule.startTime)
     setEndTime(schedule.endTime)
     setDaysOfWeek(schedule.daysOfWeek)
-    setChannel(schedule.channel ?? "full")
+    const client = clients.find((c) => c.id === schedule.clientId)
+    setChannel(
+      sanitizeChannel(schedule.channel ?? "full", !!client?.isCondo),
+    )
     setOpen(true)
   }
 
@@ -187,6 +232,14 @@ export default function SchedulesPage() {
     }
     if (channel === "ads" && groupId === "none") {
       toast.error("Selecione o grupo de telas para anúncios")
+      return
+    }
+    if (clientIsCondo && channel === "ads") {
+      toast.error("Cliente condomínio não usa o canal Anúncios LEDE")
+      return
+    }
+    if (!clientIsCondo && channel === "condo") {
+      toast.error("Cliente anunciante não usa o canal Condomínio")
       return
     }
     const payload = {
@@ -321,26 +374,24 @@ export default function SchedulesPage() {
               <Label>Canal</Label>
               <Select
                 value={channel}
-                onValueChange={(v) =>
-                  setChannel(
-                    v === "condo" || v === "ads" ? v : "full",
-                  )
-                }
-                items={{
-                  full: "Full (tela inteira)",
-                  condo: "Condomínio (área exclusiva)",
-                  ads: "Anúncios LEDE",
+                onValueChange={(v) => {
+                  if (v === "full" || v === "condo" || v === "ads") {
+                    setChannel(sanitizeChannel(v, clientIsCondo))
+                  }
                 }}
+                items={Object.fromEntries(
+                  channelOptions.map((o) => [o.value, o.label]),
+                )}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="full">Full (tela inteira)</SelectItem>
-                  <SelectItem value="condo">
-                    Condomínio (área exclusiva)
-                  </SelectItem>
-                  <SelectItem value="ads">Anúncios LEDE</SelectItem>
+                  {channelOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

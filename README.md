@@ -210,8 +210,8 @@ Telemetria no heartbeat: CPU, RAM, disco, uptime — visível em **Telas**.
 #### Device Owner (opcional)
 
 ```bash
-adb shell dpm set-device-owner com.lede.edge.casa/.LedeDeviceAdminReceiver
-# prod: com.lede.edge/.LedeDeviceAdminReceiver
+adb shell dpm set-device-owner com.lede.edge.casa/com.lede.edge.LedeDeviceAdminReceiver
+# prod: com.lede.edge/com.lede.edge.LedeDeviceAdminReceiver
 ```
 
 Habilita reboot remoto via DPM. Sem Device Owner, o kiosk imersivo continua; o comando Reiniciar pode falhar.
