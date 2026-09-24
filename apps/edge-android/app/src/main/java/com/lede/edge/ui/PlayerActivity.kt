@@ -87,11 +87,8 @@ class PlayerActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 runCatching {
                     val telemetry = DeviceTelemetryCollector.collect(this@PlayerActivity)
-                    val result = api.heartbeat(
-                        token,
-                        telemetry,
-                        TimeZone.getDefault().id,
-                    )
+                    val result = api.heartbeat(token, telemetry)
+                    applyCloudTimezone(result.timezone)
                     popQueue.flush(api, token)
                     result.commands.forEach { handleCommand(token, it) }
                 }.onFailure { err ->
@@ -172,6 +169,7 @@ class PlayerActivity : AppCompatActivity() {
         KioskPolicy.applyIfOwner(this)
         enterKioskMode()
         applyDeviceCode(store.shortCode)
+        applyCloudTimezone(store.cloudTimezone)
         syncNow()
         handler.post(heartbeatRunnable)
         handler.postDelayed(syncRunnable, 60_000)
@@ -420,6 +418,7 @@ class PlayerActivity : AppCompatActivity() {
                         manifest.orientation,
                     )
                 }
+                applyCloudTimezone(manifest.timezone)
                 withContext(Dispatchers.IO) { manifestStore.save(manifest) }
                 val local = mediaCache.materialize(manifest)
                 offlineMode = false
@@ -568,6 +567,22 @@ class PlayerActivity : AppCompatActivity() {
                         goToPairing()
                     }
                 }
+        }
+    }
+
+    /** Aplica timezone definido no Cloud (requer Device Owner no STB). */
+    private fun applyCloudTimezone(timeZoneId: String?) {
+        val tz = timeZoneId?.trim().orEmpty()
+        if (tz.isEmpty()) return
+        store.cloudTimezone = tz
+        val ok = KioskPolicy.trySetTimeZone(this, tz)
+        if (ok) {
+            Log.i(TAG, "Timezone aplicado: $tz (sistema=${TimeZone.getDefault().id})")
+        } else {
+            Log.w(
+                TAG,
+                "Não foi possível aplicar timezone $tz — Device Owner necessário?",
+            )
         }
     }
 

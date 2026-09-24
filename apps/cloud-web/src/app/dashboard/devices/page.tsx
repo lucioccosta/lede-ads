@@ -553,7 +553,7 @@ export default function DevicesPage() {
         method: "POST",
         body: JSON.stringify({ deviceIds: selected, timezone: batchTz }),
       });
-      toast.success(`Timezone aplicado em ${res.updated} tela(s)`);
+      toast.success(`Timezone aplicado em ${res.updated} tela(s) — Edge sincroniza em ~30s`);
       setSelected([]);
       await load();
     } catch (err) {
@@ -949,6 +949,14 @@ export default function DevicesPage() {
                         {d.externalIp?.trim() || "WAN —"}
                       </span>
                     </div>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <MonitorIcon className="size-3 shrink-0" />
+                      <span>
+                        {d.screenWidth != null && d.screenHeight != null
+                          ? `${d.screenWidth}×${d.screenHeight}`
+                          : "Res. —"}
+                      </span>
+                    </div>
                     {d.updateAvailable ? (
                       <Badge variant="default" className="text-[10px]">
                         Atualizar → {d.latestEdgeVersion}
@@ -1060,7 +1068,7 @@ export default function DevicesPage() {
                 <div className="rounded-lg border bg-muted/30 p-3">
                   <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     <WifiIcon className="size-3.5" />
-                    Rede
+                    Rede e tela
                   </p>
                   <div className="grid gap-1.5 sm:grid-cols-2">
                     <MetaRow
@@ -1120,7 +1128,7 @@ export default function DevicesPage() {
                   {detail.updateAvailable ? (
                     <Badge variant="default">Atualização disponível</Badge>
                   ) : null}
-                  <MetaRow
+                    <MetaRow
                     icon={ClockIcon}
                     label="Timezone"
                     value={
@@ -1332,6 +1340,10 @@ export default function DevicesPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                O Edge aplica no STB no próximo heartbeat (~30s), com Device
+                Owner.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Orientação</Label>

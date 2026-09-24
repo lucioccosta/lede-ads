@@ -18,6 +18,8 @@ data class DeviceTelemetry(
     val cpuUsagePercent: Float?,
     val uptimeMs: Long,
     val ipAddress: String? = null,
+    val screenWidth: Int? = null,
+    val screenHeight: Int? = null,
 )
 
 object DeviceTelemetryCollector {
@@ -25,6 +27,7 @@ object DeviceTelemetryCollector {
         val disk = readDisk()
         val ram = readRam(context)
         val cpu = sampleCpuUsage()
+        val screen = readScreenSize(context)
         DeviceTelemetry(
             freeStorageBytes = disk.first,
             totalStorageBytes = disk.second,
@@ -33,7 +36,27 @@ object DeviceTelemetryCollector {
             cpuUsagePercent = cpu,
             uptimeMs = SystemClock.elapsedRealtime(),
             ipAddress = readPrimaryIpv4(),
+            screenWidth = screen?.first,
+            screenHeight = screen?.second,
         )
+    }
+
+    private fun readScreenSize(context: Context): Pair<Int, Int>? {
+        return try {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+                ?: return null
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                val bounds = wm.currentWindowMetrics.bounds
+                bounds.width() to bounds.height()
+            } else {
+                val metrics = android.util.DisplayMetrics()
+                @Suppress("DEPRECATION")
+                wm.defaultDisplay.getRealMetrics(metrics)
+                metrics.widthPixels to metrics.heightPixels
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /** Primeiro IPv4 não-loopback (Wi‑Fi / Ethernet). */

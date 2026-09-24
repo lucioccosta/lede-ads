@@ -22,6 +22,11 @@ class DeviceStore(context: Context) {
         get() = prefs.getString("short_code", null)
         set(value) = prefs.edit().putString("short_code", value).apply()
 
+    /** Timezone IANA definido no Cloud (Telas). */
+    var cloudTimezone: String?
+        get() = prefs.getString("cloud_timezone", null)
+        set(value) = prefs.edit().putString("cloud_timezone", value).apply()
+
     /** "landscape" | "portrait" */
     var orientation: String
         get() = prefs.getString("orientation", "landscape") ?: "landscape"

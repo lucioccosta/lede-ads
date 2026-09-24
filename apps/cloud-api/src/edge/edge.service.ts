@@ -624,7 +624,7 @@ export class EdgeService {
         ...(externalIp ? { externalIp } : {}),
         ...(dto.screenWidth != null ? { screenWidth: dto.screenWidth } : {}),
         ...(dto.screenHeight != null ? { screenHeight: dto.screenHeight } : {}),
-        ...(dto.timezone ? { timezone: dto.timezone } : {}),
+        // timezone do Cloud NÃO é sobrescrito pelo Edge — vem de Telas/editar device
       },
     });
 
@@ -654,8 +654,15 @@ export class EdgeService {
     }
     const fresh = commands.filter((c) => !stale.some((s) => s.id === c.id));
 
+    // Re-lê timezone atual (pode ter sido alterado no Cloud)
+    const freshDevice = await this.prisma.device.findUnique({
+      where: { id: device.id },
+      select: { timezone: true },
+    });
+
     return {
       ok: true,
+      timezone: freshDevice?.timezone ?? device.timezone,
       commands: fresh.map((c) => ({
         id: c.id,
         type: c.type,

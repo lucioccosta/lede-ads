@@ -41,4 +41,34 @@ object KioskPolicy {
             false
         }
     }
+
+    /**
+     * Aplica timezone IANA (ex.: America/Manaus) no sistema.
+     * Com Device Owner usa [DevicePolicyManager.setTimeZone] (API 28+).
+     * Sem owner tenta AlarmManager (falha na maioria dos STBs sem permissão de sistema).
+     */
+    fun trySetTimeZone(context: Context, timeZoneId: String): Boolean {
+        val tz = timeZoneId.trim()
+        if (tz.isEmpty()) return false
+        val current = java.util.TimeZone.getDefault().id
+        if (current == tz) return true
+
+        if (isDeviceOwner(context) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return false
+            return try {
+                dpm.setTimeZone(adminComponent(context), tz)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        return try {
+            val am = context.getSystemService(android.app.AlarmManager::class.java) ?: return false
+            am.setTimeZone(tz)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 }

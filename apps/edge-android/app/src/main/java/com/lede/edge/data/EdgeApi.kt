@@ -63,7 +63,6 @@ class EdgeApi {
     suspend fun heartbeat(
         token: String,
         telemetry: DeviceTelemetry,
-        timezone: String? = null,
     ): HeartbeatResult = withContext(Dispatchers.IO) {
         val bodyJson = JSONObject()
             .put("appVersion", BuildConfig.VERSION_NAME)
@@ -80,7 +79,8 @@ class EdgeApi {
         if (!telemetry.ipAddress.isNullOrBlank()) {
             bodyJson.put("ipAddress", telemetry.ipAddress)
         }
-        if (!timezone.isNullOrBlank()) bodyJson.put("timezone", timezone)
+        telemetry.screenWidth?.let { bodyJson.put("screenWidth", it) }
+        telemetry.screenHeight?.let { bodyJson.put("screenHeight", it) }
         val body = bodyJson.toString().toRequestBody(json)
         val req = Request.Builder()
             .url("${BuildConfig.API_BASE_URL}/edge/heartbeat")
@@ -119,7 +119,10 @@ class EdgeApi {
                     )
                 }
             }
-            HeartbeatResult(commands = commands)
+            HeartbeatResult(
+                commands = commands,
+                timezone = obj.optString("timezone", "").ifBlank { null },
+            )
         }
     }
 
@@ -224,6 +227,8 @@ data class PairResult(
 
 data class HeartbeatResult(
     val commands: List<RemoteCommand> = emptyList(),
+    /** Timezone IANA do Cloud (Telas) — Edge aplica no sistema. */
+    val timezone: String? = null,
 )
 
 data class RemoteCommand(
