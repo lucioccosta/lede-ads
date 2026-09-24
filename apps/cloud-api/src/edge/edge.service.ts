@@ -590,7 +590,11 @@ export class EdgeService {
     return scenes;
   }
 
-  async heartbeat(token: string, dto: HeartbeatDto) {
+  async heartbeat(
+    token: string,
+    dto: HeartbeatDto,
+    externalIp?: string,
+  ) {
     const device = await this.byToken(token);
     await this.prisma.device.update({
       where: { id: device.id },
@@ -616,9 +620,10 @@ export class EdgeService {
           ? { cpuUsagePercent: dto.cpuUsagePercent }
           : {}),
         ...(dto.uptimeMs != null ? { uptimeMs: BigInt(dto.uptimeMs) } : {}),
-        ipAddress: dto.ipAddress,
-        screenWidth: dto.screenWidth,
-        screenHeight: dto.screenHeight,
+        ...(dto.ipAddress ? { ipAddress: dto.ipAddress } : {}),
+        ...(externalIp ? { externalIp } : {}),
+        ...(dto.screenWidth != null ? { screenWidth: dto.screenWidth } : {}),
+        ...(dto.screenHeight != null ? { screenHeight: dto.screenHeight } : {}),
         ...(dto.timezone ? { timezone: dto.timezone } : {}),
       },
     });

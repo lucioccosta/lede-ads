@@ -267,6 +267,8 @@ model Device {
   cpuUsagePercent   Float?
   uptimeMs          BigInt?
   ipAddress         String?
+  /** IP público visto pela API no heartbeat (NAT / WAN). */
+  externalIp        String?
   screenWidth       Int?
   screenHeight      Int?
   locationLabel     String?

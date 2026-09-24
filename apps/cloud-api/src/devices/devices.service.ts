@@ -306,6 +306,7 @@ export class DevicesService {
         cpuUsagePercent: null,
         uptimeMs: null,
         ipAddress: null,
+        externalIp: null,
         screenWidth: null,
         screenHeight: null,
       },

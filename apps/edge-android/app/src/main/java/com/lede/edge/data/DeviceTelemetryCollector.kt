@@ -17,6 +17,7 @@ data class DeviceTelemetry(
     val ramTotalBytes: Long,
     val cpuUsagePercent: Float?,
     val uptimeMs: Long,
+    val ipAddress: String? = null,
 )
 
 object DeviceTelemetryCollector {
@@ -31,7 +32,35 @@ object DeviceTelemetryCollector {
             ramTotalBytes = ram.second,
             cpuUsagePercent = cpu,
             uptimeMs = SystemClock.elapsedRealtime(),
+            ipAddress = readPrimaryIpv4(),
         )
+    }
+
+    /** Primeiro IPv4 não-loopback (Wi‑Fi / Ethernet). */
+    private fun readPrimaryIpv4(): String? {
+        return try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return null
+            val candidates = mutableListOf<String>()
+            while (interfaces.hasMoreElements()) {
+                val nif = interfaces.nextElement()
+                if (!nif.isUp || nif.isLoopback) continue
+                val addrs = nif.inetAddresses
+                while (addrs.hasMoreElements()) {
+                    val addr = addrs.nextElement()
+                    if (addr.isLoopbackAddress || addr !is java.net.Inet4Address) continue
+                    val host = addr.hostAddress ?: continue
+                    if (host.startsWith("169.254.")) continue // link-local
+                    candidates += host
+                }
+            }
+            // Prefere LAN privada típica
+            candidates.firstOrNull { it.startsWith("192.168.") }
+                ?: candidates.firstOrNull { it.startsWith("10.") }
+                ?: candidates.firstOrNull { it.startsWith("172.") }
+                ?: candidates.firstOrNull()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun readDisk(): Pair<Long, Long> {

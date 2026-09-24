@@ -77,6 +77,9 @@ class EdgeApi {
         telemetry.cpuUsagePercent?.let {
             bodyJson.put("cpuUsagePercent", (it * 10).toInt() / 10.0)
         }
+        if (!telemetry.ipAddress.isNullOrBlank()) {
+            bodyJson.put("ipAddress", telemetry.ipAddress)
+        }
         if (!timezone.isNullOrBlank()) bodyJson.put("timezone", timezone)
         val body = bodyJson.toString().toRequestBody(json)
         val req = Request.Builder()

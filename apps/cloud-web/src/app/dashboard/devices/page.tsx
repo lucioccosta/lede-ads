@@ -44,6 +44,8 @@ import {
   PackageIcon,
   RotateCwSquareIcon,
   TimerIcon,
+  NetworkIcon,
+  WifiIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -85,6 +87,10 @@ type Device = {
   ramTotalBytes?: string | null;
   cpuUsagePercent?: number | null;
   uptimeMs?: string | null;
+  ipAddress?: string | null;
+  externalIp?: string | null;
+  screenWidth?: number | null;
+  screenHeight?: number | null;
 };
 
 type Client = { id: string; name: string };
@@ -280,6 +286,7 @@ export default function DevicesPage() {
   const [historyDevice, setHistoryDevice] = useState<Device | null>(null);
   const [commands, setCommands] = useState<DeviceCommand[]>([]);
   const [editing, setEditing] = useState<Device | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editLocation, setEditLocation] = useState("");
   const [editTimezone, setEditTimezone] = useState("America/Manaus");
@@ -320,10 +327,17 @@ export default function DevicesPage() {
         d.name.toLowerCase().includes(q) ||
         (d.shortCode ?? "").toLowerCase().includes(q) ||
         (d.locationLabel ?? "").toLowerCase().includes(q) ||
-        (d.pairingCode ?? "").toLowerCase().includes(q)
+        (d.pairingCode ?? "").toLowerCase().includes(q) ||
+        (d.ipAddress ?? "").toLowerCase().includes(q) ||
+        (d.externalIp ?? "").toLowerCase().includes(q)
       );
     });
   }, [items, search, statusFilter]);
+
+  const detail = useMemo(
+    () => (detailId ? items.find((d) => d.id === detailId) ?? null : null),
+    [items, detailId],
+  );
 
   function toggleSelected(id: string, checked: boolean) {
     setSelected((prev) =>
@@ -489,6 +503,7 @@ export default function DevicesPage() {
       await api(`/devices/${device.id}`, { method: "DELETE" });
       toast.success("Tela removida");
       setSelected((prev) => prev.filter((id) => id !== device.id));
+      if (detailId === device.id) setDetailId(null);
       if (historyDevice?.id === device.id) {
         setHistoryOpen(false);
         setHistoryDevice(null);
@@ -849,37 +864,52 @@ export default function DevicesPage() {
             />
             <span>Selecionar visíveis</span>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((d) => (
-              <Card key={d.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {filtered.map((d) => {
+              const shot = resolveMediaUrl(d.lastScreenshotUrl);
+              return (
+                <Card
+                  key={d.id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer overflow-hidden transition-colors hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setDetailId(d.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setDetailId(d.id);
+                    }
+                  }}
+                >
+                  <div className="relative aspect-video bg-muted">
+                    {shot ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={d.lastScreenshotUrl}
+                        src={`${shot}?t=${d.lastHeartbeatAt ?? d.id}`}
+                        alt=""
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex size-full items-center justify-center text-muted-foreground">
+                        <MonitorIcon className="size-8 opacity-40" />
+                      </div>
+                    )}
+                    <div
+                      className="absolute left-2 top-2"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
                       <Checkbox
                         checked={selected.includes(d.id)}
                         onCheckedChange={(v) =>
                           toggleSelected(d.id, v === true)
                         }
-                        className="mt-1"
+                        className="border-background bg-background/80 shadow"
                       />
-                      <div>
-                        <CardTitle className="flex items-center gap-2">
-                          <span>{d.name}</span>
-                          {d.shortCode ? (
-                            <span
-                              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wider text-muted-foreground"
-                              title="Código da tela"
-                            >
-                              {d.shortCode}
-                            </span>
-                          ) : null}
-                        </CardTitle>
-                        <CardDescription>
-                          {d.locationLabel ?? "Sem local"}
-                        </CardDescription>
-                      </div>
                     </div>
                     <Badge
+                      className="absolute right-2 top-2"
                       variant={
                         d.computedStatus === "online"
                           ? "default"
@@ -889,211 +919,320 @@ export default function DevicesPage() {
                       }
                     >
                       {d.computedStatus === "pairing"
-                        ? "Aguardando pairing"
+                        ? "pairing"
                         : d.computedStatus}
                     </Badge>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  {d.shortCode && (
-                    <MetaRow
-                      icon={MonitorIcon}
-                      label="Código"
-                      value={d.shortCode}
-                      mono
-                    />
-                  )}
-                  {d.pairingCode && (
-                    <MetaRow
-                      icon={PackageIcon}
-                      label="Pairing"
-                      value={d.pairingCode}
-                      mono
-                    />
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <MetricCell
-                      icon={CpuIcon}
-                      label="CPU"
-                      value={
-                        d.cpuUsagePercent != null
-                          ? `${d.cpuUsagePercent.toFixed(1)}%`
-                          : "—"
-                      }
-                      pct={d.cpuUsagePercent ?? null}
-                    />
-                    <MetricCell
-                      icon={MemoryStickIcon}
-                      label="RAM"
-                      value={
-                        d.ramTotalBytes != null
-                          ? formatBytes(d.ramTotalBytes)
-                          : "—"
-                      }
-                      detail={
-                        d.ramAvailBytes != null
-                          ? `${formatBytes(d.ramAvailBytes)} livres`
-                          : undefined
-                      }
-                      pct={usedPct(d.ramAvailBytes, d.ramTotalBytes)}
-                    />
-                    <MetricCell
-                      icon={HardDriveIcon}
-                      label="Disco"
-                      value={
-                        d.totalStorageBytes != null
-                          ? formatBytes(d.totalStorageBytes)
-                          : "—"
-                      }
-                      detail={
-                        d.freeStorageBytes != null
-                          ? `${formatBytes(d.freeStorageBytes)} livres`
-                          : undefined
-                      }
-                      pct={usedPct(d.freeStorageBytes, d.totalStorageBytes)}
-                    />
-                    <MetricCell
-                      icon={TimerIcon}
-                      label="Uptime"
-                      value={formatUptime(d.uptimeMs)}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5 border-t pt-3">
-                    <MetaRow
-                      icon={HeartPulseIcon}
-                      label="Heartbeat"
-                      value={
-                        d.lastHeartbeatAt
-                          ? new Date(d.lastHeartbeatAt).toLocaleString("pt-BR")
-                          : "nunca"
-                      }
-                    />
-                    <MetaRow
-                      icon={PackageIcon}
-                      label="App"
-                      value={
-                        d.updateAvailable
-                          ? `${d.appVersion ?? "—"} → ${d.latestEdgeVersion}`
-                          : (d.appVersion ?? "—")
-                      }
-                    />
+                  <CardHeader className="space-y-1 p-3 pb-1">
+                    <CardTitle className="flex items-center gap-1.5 text-sm leading-tight">
+                      <span className="truncate">{d.name}</span>
+                      {d.shortCode ? (
+                        <span className="shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-muted-foreground">
+                          {d.shortCode}
+                        </span>
+                      ) : null}
+                    </CardTitle>
+                    <CardDescription className="truncate text-xs">
+                      {d.locationLabel ?? "Sem local"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-1 p-3 pt-0 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <NetworkIcon className="size-3 shrink-0" />
+                      <span className="font-mono">
+                        {d.ipAddress?.trim() || "LAN —"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <WifiIcon className="size-3 shrink-0" />
+                      <span className="font-mono">
+                        {d.externalIp?.trim() || "WAN —"}
+                      </span>
+                    </div>
                     {d.updateAvailable ? (
-                      <div className="pt-1">
-                        <Badge variant="default">Atualização disponível</Badge>
-                      </div>
+                      <Badge variant="default" className="text-[10px]">
+                        Atualizar → {d.latestEdgeVersion}
+                      </Badge>
                     ) : null}
-                    <MetaRow
-                      icon={ClockIcon}
-                      label="Timezone"
-                      value={timezoneLabel[d.timezone] ?? d.timezone ?? "—"}
-                    />
-                    <MetaRow
-                      icon={RotateCwSquareIcon}
-                      label="Orientação"
-                      value={
-                        orientationLabel[d.orientation] ?? d.orientation ?? "—"
-                      }
-                    />
-                    <MetaRow
-                      icon={LayoutTemplateIcon}
-                      label="Tipo"
-                      value={d.screenType?.name ?? "Nenhum"}
-                    />
-                    <MetaRow
-                      icon={Building2Icon}
-                      label="Condomínio"
-                      value={d.client?.name ?? "Nenhum"}
-                    />
-                    <MetaRow
-                      icon={LayersIcon}
-                      label="Grupo"
-                      value={d.group?.name ?? "Nenhum"}
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openEdit(d)}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busyId === d.id}
-                      onClick={() => void sendCommand(d.id, "resync")}
-                    >
-                      Re-sync
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busyId === d.id}
-                      onClick={() => void sendCommand(d.id, "screenshot")}
-                    >
-                      Screenshot
-                    </Button>
-                    {d.updateAvailable ? (
-                      <Button
-                        size="sm"
-                        disabled={busyId === d.id}
-                        onClick={() => void sendCommand(d.id, "update")}
-                      >
-                        <DownloadIcon className="mr-1 size-3.5" />
-                        Atualizar
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={busyId === d.id}
-                      onClick={() => void sendCommand(d.id, "reboot")}
-                    >
-                      Reiniciar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busyId === d.id}
-                      onClick={() => void resetPairing(d)}
-                    >
-                      Re-parear
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void openHistory(d)}
-                    >
-                      Histórico
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={busyId === d.id}
-                      onClick={() => void removeDevice(d)}
-                    >
-                      Remover
-                    </Button>
-                  </div>
-                  {resolveMediaUrl(d.lastScreenshotUrl) && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={d.lastScreenshotUrl}
-                      src={`${resolveMediaUrl(d.lastScreenshotUrl)}?t=${d.lastHeartbeatAt ?? d.id}`}
-                      alt={`Screenshot ${d.name}`}
-                      className="mt-2 aspect-video w-full rounded-md border object-cover bg-muted"
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </>
       )}
+
+      <Dialog
+        open={!!detail}
+        onOpenChange={(v) => {
+          if (!v) setDetailId(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          {detail ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex flex-wrap items-center gap-2">
+                  <span>{detail.name}</span>
+                  {detail.shortCode ? (
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wider text-muted-foreground">
+                      {detail.shortCode}
+                    </span>
+                  ) : null}
+                  <Badge
+                    variant={
+                      detail.computedStatus === "online"
+                        ? "default"
+                        : detail.computedStatus === "pairing"
+                          ? "secondary"
+                          : "destructive"
+                    }
+                  >
+                    {detail.computedStatus === "pairing"
+                      ? "Aguardando pairing"
+                      : detail.computedStatus}
+                  </Badge>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-4 text-sm">
+                {resolveMediaUrl(detail.lastScreenshotUrl) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={detail.lastScreenshotUrl}
+                    src={`${resolveMediaUrl(detail.lastScreenshotUrl)}?t=${detail.lastHeartbeatAt ?? detail.id}`}
+                    alt={`Screenshot ${detail.name}`}
+                    className="aspect-video w-full rounded-md border bg-muted object-cover"
+                  />
+                ) : null}
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <MetricCell
+                    icon={CpuIcon}
+                    label="CPU"
+                    value={
+                      detail.cpuUsagePercent != null
+                        ? `${detail.cpuUsagePercent.toFixed(1)}%`
+                        : "—"
+                    }
+                    pct={detail.cpuUsagePercent ?? null}
+                  />
+                  <MetricCell
+                    icon={MemoryStickIcon}
+                    label="RAM"
+                    value={
+                      detail.ramTotalBytes != null
+                        ? formatBytes(detail.ramTotalBytes)
+                        : "—"
+                    }
+                    detail={
+                      detail.ramAvailBytes != null
+                        ? `${formatBytes(detail.ramAvailBytes)} livres`
+                        : undefined
+                    }
+                    pct={usedPct(detail.ramAvailBytes, detail.ramTotalBytes)}
+                  />
+                  <MetricCell
+                    icon={HardDriveIcon}
+                    label="Disco"
+                    value={
+                      detail.totalStorageBytes != null
+                        ? formatBytes(detail.totalStorageBytes)
+                        : "—"
+                    }
+                    detail={
+                      detail.freeStorageBytes != null
+                        ? `${formatBytes(detail.freeStorageBytes)} livres`
+                        : undefined
+                    }
+                    pct={usedPct(
+                      detail.freeStorageBytes,
+                      detail.totalStorageBytes,
+                    )}
+                  />
+                  <MetricCell
+                    icon={TimerIcon}
+                    label="Uptime"
+                    value={formatUptime(detail.uptimeMs)}
+                  />
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <WifiIcon className="size-3.5" />
+                    Rede
+                  </p>
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    <MetaRow
+                      icon={NetworkIcon}
+                      label="IP local"
+                      value={detail.ipAddress?.trim() || "—"}
+                      mono
+                    />
+                    <MetaRow
+                      icon={WifiIcon}
+                      label="IP externo"
+                      value={detail.externalIp?.trim() || "—"}
+                      mono
+                    />
+                    <MetaRow
+                      icon={MonitorIcon}
+                      label="Resolução"
+                      value={
+                        detail.screenWidth != null &&
+                        detail.screenHeight != null
+                          ? `${detail.screenWidth}×${detail.screenHeight}`
+                          : "—"
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  {detail.pairingCode ? (
+                    <MetaRow
+                      icon={PackageIcon}
+                      label="Pairing"
+                      value={detail.pairingCode}
+                      mono
+                    />
+                  ) : null}
+                  <MetaRow
+                    icon={HeartPulseIcon}
+                    label="Heartbeat"
+                    value={
+                      detail.lastHeartbeatAt
+                        ? new Date(detail.lastHeartbeatAt).toLocaleString(
+                            "pt-BR",
+                          )
+                        : "nunca"
+                    }
+                  />
+                  <MetaRow
+                    icon={PackageIcon}
+                    label="App"
+                    value={
+                      detail.updateAvailable
+                        ? `${detail.appVersion ?? "—"} → ${detail.latestEdgeVersion}`
+                        : (detail.appVersion ?? "—")
+                    }
+                  />
+                  {detail.updateAvailable ? (
+                    <Badge variant="default">Atualização disponível</Badge>
+                  ) : null}
+                  <MetaRow
+                    icon={ClockIcon}
+                    label="Timezone"
+                    value={
+                      timezoneLabel[detail.timezone] ??
+                      detail.timezone ??
+                      "—"
+                    }
+                  />
+                  <MetaRow
+                    icon={RotateCwSquareIcon}
+                    label="Orientação"
+                    value={
+                      orientationLabel[detail.orientation] ??
+                      detail.orientation ??
+                      "—"
+                    }
+                  />
+                  <MetaRow
+                    icon={LayoutTemplateIcon}
+                    label="Tipo"
+                    value={detail.screenType?.name ?? "Nenhum"}
+                  />
+                  <MetaRow
+                    icon={Building2Icon}
+                    label="Condomínio"
+                    value={detail.client?.name ?? "Nenhum"}
+                  />
+                  <MetaRow
+                    icon={LayersIcon}
+                    label="Grupo"
+                    value={detail.group?.name ?? "Nenhum"}
+                  />
+                  <MetaRow
+                    icon={MonitorIcon}
+                    label="Local"
+                    value={detail.locationLabel ?? "—"}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2 border-t pt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      openEdit(detail);
+                    }}
+                  >
+                    Editar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyId === detail.id}
+                    onClick={() => void sendCommand(detail.id, "resync")}
+                  >
+                    Re-sync
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyId === detail.id}
+                    onClick={() => void sendCommand(detail.id, "screenshot")}
+                  >
+                    Screenshot
+                  </Button>
+                  {detail.updateAvailable ? (
+                    <Button
+                      size="sm"
+                      disabled={busyId === detail.id}
+                      onClick={() => void sendCommand(detail.id, "update")}
+                    >
+                      <DownloadIcon className="mr-1 size-3.5" />
+                      Atualizar
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={busyId === detail.id}
+                    onClick={() => void sendCommand(detail.id, "reboot")}
+                  >
+                    Reiniciar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyId === detail.id}
+                    onClick={() => void resetPairing(detail)}
+                  >
+                    Re-parear
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void openHistory(detail)}
+                  >
+                    Histórico
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={busyId === detail.id}
+                    onClick={() => void removeDevice(detail)}
+                  >
+                    Remover
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="sm:max-w-lg">

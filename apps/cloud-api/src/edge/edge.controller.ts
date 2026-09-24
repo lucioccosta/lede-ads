@@ -6,12 +6,14 @@ import {
   Headers,
   Param,
   Post,
+  Req,
   UnauthorizedException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import type { Request } from 'express';
 import { EdgeService } from './edge.service';
 import {
   AckCommandDto,
@@ -21,6 +23,17 @@ import {
   ScreenshotDto,
 } from './dto/edge.dto';
 import { StorageService } from '../storage/storage.service';
+
+function clientIp(req: Request): string | undefined {
+  const xf = req.headers['x-forwarded-for'];
+  const raw =
+    (typeof xf === 'string' ? xf.split(',')[0] : undefined)?.trim() ||
+    req.socket?.remoteAddress ||
+    undefined;
+  if (!raw) return undefined;
+  // ::ffff:192.168.x.x → 192.168.x.x
+  return raw.replace(/^::ffff:/, '');
+}
 
 @Controller('edge')
 export class EdgeController {
@@ -50,9 +63,10 @@ export class EdgeController {
   heartbeat(
     @Headers('x-device-token') token: string | undefined,
     @Body() dto: HeartbeatDto,
+    @Req() req: Request,
   ) {
     if (!token) throw new UnauthorizedException('Device token obrigatório');
-    return this.edge.heartbeat(token, dto);
+    return this.edge.heartbeat(token, dto, clientIp(req));
   }
 
   @Post('commands/:id/ack')
