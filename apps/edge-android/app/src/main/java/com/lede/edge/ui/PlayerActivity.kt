@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.PixelCopy
@@ -315,9 +316,8 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
             "reboot" -> {
-                if (KioskPolicy.tryReboot(this)) {
-                    runCatching { api.ackCommand(token, command.id, "done") }
-                } else {
+                // ACK antes do reboot — senão o comando fica pending e o STB entra em loop.
+                if (!KioskPolicy.isDeviceOwner(this)) {
                     runCatching {
                         api.ackCommand(
                             token,
@@ -326,33 +326,47 @@ class PlayerActivity : AppCompatActivity() {
                             "Reboot requer Device Owner",
                         )
                     }
+                    return
+                }
+                runCatching { api.ackCommand(token, command.id, "done") }
+                kotlinx.coroutines.delay(500)
+                if (!KioskPolicy.tryReboot(this)) {
+                    Log.w(TAG, "tryReboot falhou após ack")
                 }
             }
             "update" -> {
                 val url = command.payload?.apkUrl?.trim().orEmpty()
+                val targetVersion = command.payload?.versionName?.trim().orEmpty()
                 if (url.isBlank()) {
                     runCatching {
                         api.ackCommand(token, command.id, "failed", "URL do APK ausente")
                     }
                     return
                 }
+                // Já na versão alvo — ACK e ignore (evita reinstall/reboot em loop).
+                val current = BuildConfig.VERSION_NAME
+                    .substringBefore("-")
+                    .trim()
+                if (targetVersion.isNotBlank() && current == targetVersion) {
+                    Log.i(TAG, "Update ignorado — já em $current")
+                    runCatching { api.ackCommand(token, command.id, "done") }
+                    return
+                }
                 Toast.makeText(
                     this,
-                    "Atualizando Edge ${command.payload?.versionName ?: ""}…",
+                    "Atualizando Edge ${targetVersion.ifBlank { "" }}…",
                     Toast.LENGTH_LONG,
                 ).show()
+                // ACK antes do PackageInstaller — o processo pode morrer / o box pode reiniciar.
+                runCatching { api.ackCommand(token, command.id, "done") }
+                kotlinx.coroutines.delay(400)
                 val result = ApkUpdateInstaller.downloadAndInstall(this, url)
-                if (result.isSuccess) {
-                    runCatching { api.ackCommand(token, command.id, "done") }
-                } else {
-                    runCatching {
-                        api.ackCommand(
-                            token,
-                            command.id,
-                            "failed",
-                            result.exceptionOrNull()?.message ?: "Falha no update",
-                        )
-                    }
+                if (result.isFailure) {
+                    Log.e(
+                        TAG,
+                        "OTA falhou: ${result.exceptionOrNull()?.message}",
+                        result.exceptionOrNull(),
+                    )
                 }
             }
             else -> {
@@ -767,6 +781,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "PlayerActivity"
         private const val ESCAPE_WINDOW_MS = 3_000L
         private const val ESCAPE_BACK_ONLY = 7
         private const val ESCAPE_BACK_WITH_VOLUME = 3

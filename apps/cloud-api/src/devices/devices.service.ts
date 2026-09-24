@@ -356,6 +356,22 @@ export class DevicesService {
       };
     }
 
+    // Evita acumular reboot/update pending (causa loop se o ACK não chega antes do reboot).
+    if (dto.type === 'reboot' || dto.type === 'update') {
+      await this.prisma.deviceCommand.updateMany({
+        where: {
+          deviceId: id,
+          status: DeviceCommandStatus.pending,
+          type: dto.type as DeviceCommandType,
+        },
+        data: {
+          status: DeviceCommandStatus.failed,
+          error: 'Substituído por novo comando',
+          ackedAt: new Date(),
+        },
+      });
+    }
+
     return this.prisma.deviceCommand.create({
       data: {
         deviceId: id,

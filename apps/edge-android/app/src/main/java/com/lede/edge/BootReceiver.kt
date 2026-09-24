@@ -70,7 +70,6 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON",
-            "android.intent.action.REBOOT",
         )
     }
 }

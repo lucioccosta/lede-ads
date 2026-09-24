@@ -632,12 +632,31 @@ export class EdgeService {
       where: { deviceId: device.id, status: DeviceCommandStatus.pending },
       orderBy: { createdAt: 'asc' },
       take: 10,
-      select: { id: true, type: true, payloadJson: true },
+      select: { id: true, type: true, payloadJson: true, createdAt: true },
     });
+
+    // Expire reboot/update pending há >10 min (proteção contra loop pós-falha de ACK).
+    const staleCutoff = Date.now() - 10 * 60 * 1000;
+    const stale = commands.filter(
+      (c) =>
+        (c.type === 'reboot' || c.type === 'update') &&
+        c.createdAt.getTime() < staleCutoff,
+    );
+    if (stale.length > 0) {
+      await this.prisma.deviceCommand.updateMany({
+        where: { id: { in: stale.map((c) => c.id) } },
+        data: {
+          status: DeviceCommandStatus.failed,
+          error: 'Expirado (proteção contra loop)',
+          ackedAt: new Date(),
+        },
+      });
+    }
+    const fresh = commands.filter((c) => !stale.some((s) => s.id === c.id));
 
     return {
       ok: true,
-      commands: commands.map((c) => ({
+      commands: fresh.map((c) => ({
         id: c.id,
         type: c.type,
         payload: c.payloadJson ?? null,
