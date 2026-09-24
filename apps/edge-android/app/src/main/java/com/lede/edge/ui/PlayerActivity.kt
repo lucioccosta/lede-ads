@@ -170,6 +170,7 @@ class PlayerActivity : AppCompatActivity() {
 
         KioskPolicy.applyIfOwner(this)
         enterKioskMode()
+        applyDeviceCode(store.shortCode)
         syncNow()
         handler.post(heartbeatRunnable)
         handler.postDelayed(syncRunnable, 60_000)
@@ -390,6 +391,13 @@ class PlayerActivity : AppCompatActivity() {
             val remote = runCatching { api.sync(token) }
             if (remote.isSuccess) {
                 val manifest = remote.getOrThrow()
+                if (!manifest.shortCode.isNullOrBlank()) {
+                    store.shortCode = manifest.shortCode
+                    applyDeviceCode(manifest.shortCode)
+                }
+                if (!manifest.deviceName.isNullOrBlank()) {
+                    store.deviceName = manifest.deviceName
+                }
                 if (!manifest.orientation.isNullOrBlank()) {
                     store.orientation = manifest.orientation
                     OrientationHelper.apply(
@@ -519,15 +527,24 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             runCatching { api.ticker(token) }
                 .onSuccess { payload ->
+                    if (!payload.shortCode.isNullOrBlank()) {
+                        store.shortCode = payload.shortCode
+                        applyDeviceCode(payload.shortCode)
+                    }
+                    if (!payload.deviceName.isNullOrBlank()) {
+                        store.deviceName = payload.deviceName
+                    }
                     if (payload.items.isEmpty() && payload.text.isBlank()) {
                         tickerAllItems = emptyList()
                         tickerPages = emptyList()
                         binding.tickerBar.visibility = View.GONE
+                        applyDeviceCode(store.shortCode)
                         return@onSuccess
                     }
                     tickerAllItems = payload.items
                     binding.tickerClock.text = clockFormat.format(Date())
                     binding.tickerBar.visibility = View.VISIBLE
+                    applyDeviceCode(store.shortCode)
                     binding.tickerItems.post {
                         rebuildTickerPagesAndShow()
                     }
@@ -537,6 +554,23 @@ class PlayerActivity : AppCompatActivity() {
                         goToPairing()
                     }
                 }
+        }
+    }
+
+    /** Mostra o código curto na tarja (se visível) ou badge no canto. */
+    private fun applyDeviceCode(code: String?) {
+        val trimmed = code?.trim().orEmpty()
+        if (trimmed.isEmpty()) {
+            binding.tickerDeviceCode.text = ""
+            binding.deviceCodeBadge.visibility = View.GONE
+            return
+        }
+        binding.tickerDeviceCode.text = trimmed
+        if (binding.tickerBar.visibility == View.VISIBLE) {
+            binding.deviceCodeBadge.visibility = View.GONE
+        } else {
+            binding.deviceCodeBadge.text = trimmed
+            binding.deviceCodeBadge.visibility = View.VISIBLE
         }
     }
 

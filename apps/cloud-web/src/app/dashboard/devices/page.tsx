@@ -50,6 +50,7 @@ import type { LucideIcon } from "lucide-react";
 type Device = {
   id: string;
   name: string;
+  shortCode?: string | null;
   locationLabel: string | null;
   pairingCode: string | null;
   timezone: string;
@@ -317,6 +318,7 @@ export default function DevicesPage() {
       if (!q) return true;
       return (
         d.name.toLowerCase().includes(q) ||
+        (d.shortCode ?? "").toLowerCase().includes(q) ||
         (d.locationLabel ?? "").toLowerCase().includes(q) ||
         (d.pairingCode ?? "").toLowerCase().includes(q)
       );
@@ -861,7 +863,17 @@ export default function DevicesPage() {
                         className="mt-1"
                       />
                       <div>
-                        <CardTitle>{d.name}</CardTitle>
+                        <CardTitle className="flex items-center gap-2">
+                          <span>{d.name}</span>
+                          {d.shortCode ? (
+                            <span
+                              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wider text-muted-foreground"
+                              title="Código da tela"
+                            >
+                              {d.shortCode}
+                            </span>
+                          ) : null}
+                        </CardTitle>
                         <CardDescription>
                           {d.locationLabel ?? "Sem local"}
                         </CardDescription>
@@ -883,6 +895,14 @@ export default function DevicesPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
+                  {d.shortCode && (
+                    <MetaRow
+                      icon={MonitorIcon}
+                      label="Código"
+                      value={d.shortCode}
+                      mono
+                    />
+                  )}
                   {d.pairingCode && (
                     <MetaRow
                       icon={PackageIcon}

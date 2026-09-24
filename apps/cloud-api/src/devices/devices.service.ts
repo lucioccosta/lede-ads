@@ -34,6 +34,27 @@ const deviceInclude = {
 
 type DeviceWithRels = Prisma.DeviceGetPayload<{ include: typeof deviceInclude }>;
 
+/** Código curto legível na tela física e no Cloud (ex.: A3F2). */
+export function newDeviceShortCode(): string {
+  return randomBytes(2).toString('hex').toUpperCase();
+}
+
+async function uniqueShortCode(
+  prisma: PrismaService,
+  attempts = 12,
+): Promise<string> {
+  for (let i = 0; i < attempts; i++) {
+    const code = newDeviceShortCode();
+    const exists = await prisma.device.findUnique({
+      where: { shortCode: code },
+      select: { id: true },
+    });
+    if (!exists) return code;
+  }
+  // fallback improvável
+  return randomBytes(3).toString('hex').toUpperCase().slice(0, 4);
+}
+
 function serializeDevice(device: Device | DeviceWithRels) {
   return {
     ...device,
@@ -153,6 +174,7 @@ export class DevicesService {
 
   async createPairing(dto: CreateDeviceDto) {
     const pairingCode = randomBytes(3).toString('hex').toUpperCase();
+    const shortCode = await uniqueShortCode(this.prisma);
     if (dto.screenTypeId) {
       const st = await this.prisma.screenType.findUnique({
         where: { id: dto.screenTypeId },
@@ -168,6 +190,7 @@ export class DevicesService {
     const device = await this.prisma.device.create({
       data: {
         name: dto.name,
+        shortCode,
         locationLabel: dto.locationLabel,
         timezone: dto.timezone || 'America/Manaus',
         orientation: dto.orientation

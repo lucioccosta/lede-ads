@@ -303,6 +303,7 @@ async function main() {
   const deviceLobby = await prisma.device.create({
     data: {
       name: 'TV Lobby',
+      shortCode: 'L0B1',
       pairingCode: 'ABC123',
       locationLabel: 'Recepção',
       status: 'pairing',
@@ -314,6 +315,7 @@ async function main() {
   const deviceElevator = await prisma.device.create({
     data: {
       name: 'Elevador Demo',
+      shortCode: 'ELV1',
       pairingCode: 'ELV001',
       locationLabel: 'Elevador A',
       status: 'pairing',

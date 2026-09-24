@@ -17,6 +17,11 @@ class DeviceStore(context: Context) {
         get() = prefs.getString("device_name", null)
         set(value) = prefs.edit().putString("device_name", value).apply()
 
+    /** Código curto de identificação da tela (ex.: A3F2). */
+    var shortCode: String?
+        get() = prefs.getString("short_code", null)
+        set(value) = prefs.edit().putString("short_code", value).apply()
+
     /** "landscape" | "portrait" */
     var orientation: String
         get() = prefs.getString("orientation", "landscape") ?: "landscape"

@@ -37,6 +37,7 @@ class EdgeApi {
                 deviceId = obj.getString("deviceId"),
                 deviceToken = obj.getString("deviceToken"),
                 name = obj.getString("name"),
+                shortCode = obj.optString("shortCode", ""),
                 orientation = obj.optString("orientation", "landscape"),
             )
         }
@@ -214,6 +215,7 @@ data class PairResult(
     val deviceId: String,
     val deviceToken: String,
     val name: String,
+    val shortCode: String = "",
     val orientation: String = "landscape",
 )
 
@@ -238,6 +240,8 @@ data class SyncManifest(
     val version: String,
     val generatedAt: String,
     val deviceId: String,
+    val shortCode: String? = null,
+    val deviceName: String? = null,
     val timezone: String? = null,
     val orientation: String? = null,
     val scenes: List<SyncScene>,
@@ -281,6 +285,8 @@ data class TickerPayload(
     val updatedAt: String? = null,
     val text: String = "",
     val items: List<TickerItem> = emptyList(),
+    val shortCode: String? = null,
+    val deviceName: String? = null,
 )
 
 data class TickerItem(

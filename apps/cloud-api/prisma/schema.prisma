@@ -242,6 +242,8 @@ model SceneZone {
 model Device {
   id                String            @id @default(cuid())
   name              String
+  /** Código curto visível na tela física e no Cloud (ex.: A3F2). */
+  shortCode         String            @unique
   pairingCode       String?           @unique
   deviceToken       String?           @unique
   status            DeviceStatus      @default(unknown)

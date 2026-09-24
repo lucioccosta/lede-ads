@@ -40,6 +40,9 @@ class PairingActivity : AppCompatActivity() {
                     store.deviceToken = result.deviceToken
                     store.deviceId = result.deviceId
                     store.deviceName = result.name
+                    if (result.shortCode.isNotBlank()) {
+                        store.shortCode = result.shortCode
+                    }
                     store.orientation = result.orientation
                     OrientationHelper.apply(
                         this@PairingActivity,

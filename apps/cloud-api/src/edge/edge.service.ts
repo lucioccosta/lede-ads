@@ -70,8 +70,13 @@ export class EdgeService {
   ) {}
 
   async getTicker(token: string) {
-    await this.byToken(token);
-    return this.ticker.getTicker();
+    const device = await this.byToken(token);
+    const payload = await this.ticker.getTicker();
+    return {
+      ...payload,
+      shortCode: device.shortCode,
+      deviceName: device.name,
+    };
   }
 
   async pair(dto: PairDeviceDto) {
@@ -96,6 +101,7 @@ export class EdgeService {
       deviceId: updated.id,
       deviceToken,
       name: updated.name,
+      shortCode: updated.shortCode,
       orientation: updated.orientation,
     };
   }
@@ -311,6 +317,8 @@ export class EdgeService {
       version: randomBytes(4).toString('hex'),
       generatedAt: now.toISOString(),
       deviceId: device.id,
+      shortCode: device.shortCode,
+      deviceName: device.name,
       timezone: tz,
       orientation: device.orientation,
       scenes,
