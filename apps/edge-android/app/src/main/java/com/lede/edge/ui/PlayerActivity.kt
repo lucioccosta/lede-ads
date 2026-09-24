@@ -570,18 +570,28 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** Aplica timezone definido no Cloud (requer Device Owner no STB). */
+    /** Aplica timezone do Cloud na barra (sempre) e no sistema (Device Owner). */
     private fun applyCloudTimezone(timeZoneId: String?) {
         val tz = timeZoneId?.trim().orEmpty()
         if (tz.isEmpty()) return
         store.cloudTimezone = tz
+
+        val zone = TimeZone.getTimeZone(tz)
+        // Atualiza o relógio da tarja imediatamente — não depende do fuso do Android.
+        clockFormat.timeZone = zone
+        if (::binding.isInitialized && binding.tickerBar.visibility == View.VISIBLE) {
+            binding.tickerClock.text = clockFormat.format(Date())
+        }
+
         val ok = KioskPolicy.trySetTimeZone(this, tz)
         if (ok) {
+            // Alinha o default do processo (útil para logs / outros formatters)
+            TimeZone.setDefault(zone)
             Log.i(TAG, "Timezone aplicado: $tz (sistema=${TimeZone.getDefault().id})")
         } else {
             Log.w(
                 TAG,
-                "Não foi possível aplicar timezone $tz — Device Owner necessário?",
+                "Timezone da barra=$tz; sistema Android não alterado (Device Owner?)",
             )
         }
     }

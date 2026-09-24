@@ -57,6 +57,7 @@ object KioskPolicy {
             val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return false
             return try {
                 dpm.setTimeZone(adminComponent(context), tz)
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(tz))
                 true
             } catch (_: Exception) {
                 false
@@ -66,6 +67,7 @@ object KioskPolicy {
         return try {
             val am = context.getSystemService(android.app.AlarmManager::class.java) ?: return false
             am.setTimeZone(tz)
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(tz))
             true
         } catch (_: Exception) {
             false
