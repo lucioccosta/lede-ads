@@ -46,6 +46,12 @@ export class DevicesController {
     return this.devices.monitoring();
   }
 
+  @Get('edge-releases')
+  @Roles('lede_admin', 'lede_operator')
+  edgeReleases() {
+    return this.devices.listEdgeReleases();
+  }
+
   @Post('timezone/batch')
   @Roles('lede_admin', 'lede_operator')
   batchTimezone(@Body() dto: BatchTimezoneDto) {

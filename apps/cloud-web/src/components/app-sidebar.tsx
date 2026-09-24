@@ -114,6 +114,7 @@ export function AppSidebar({
             pathname.startsWith("/dashboard/media") ||
             pathname.startsWith("/dashboard/scenes") ||
             pathname.startsWith("/dashboard/schedules") ||
+            pathname.startsWith("/dashboard/ticker") ||
             pathname === "/dashboard",
           items: [
             { title: "Visão geral", url: "/dashboard" },
@@ -126,6 +127,7 @@ export function AppSidebar({
             { title: "Mídias", url: "/dashboard/media" },
             { title: "Cenas", url: "/dashboard/scenes" },
             { title: "Agendamentos", url: "/dashboard/schedules" },
+            { title: "Tarja de índices", url: "/dashboard/ticker" },
           ],
         },
         {
@@ -135,10 +137,12 @@ export function AppSidebar({
           isActive:
             pathname.startsWith("/dashboard/devices") ||
             pathname.startsWith("/dashboard/capacity") ||
+            pathname.startsWith("/dashboard/ticker") ||
             pathname.startsWith("/dashboard/reports") ||
             pathname.startsWith("/dashboard/history"),
           items: [
             { title: "Telas / Monitoramento", url: "/dashboard/devices" },
+            { title: "Tarja de índices", url: "/dashboard/ticker" },
             { title: "Capacidade", url: "/dashboard/capacity" },
             { title: "Amostragem", url: "/dashboard/reports" },
             { title: "Histórico", url: "/dashboard/history" },

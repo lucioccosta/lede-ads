@@ -34,6 +34,7 @@ import {
   Building2Icon,
   ClockIcon,
   CpuIcon,
+  DownloadIcon,
   HardDriveIcon,
   HeartPulseIcon,
   LayersIcon,
@@ -72,6 +73,11 @@ type Device = {
   lastHeartbeatAt: string | null;
   lastScreenshotUrl: string | null;
   appVersion: string | null;
+  appVersionCode?: number | null;
+  appFlavor?: string | null;
+  updateAvailable?: boolean;
+  latestEdgeVersion?: string | null;
+  latestEdgeAsset?: string | null;
   freeStorageBytes?: string | null;
   totalStorageBytes?: string | null;
   ramAvailBytes?: string | null;
@@ -127,6 +133,7 @@ const commandLabel: Record<string, string> = {
   resync: "Re-sync",
   screenshot: "Screenshot",
   reboot: "Reiniciar",
+  update: "Atualizar app",
 };
 
 const statusLabel: Record<string, string> = {
@@ -430,11 +437,17 @@ export default function DevicesPage() {
 
   async function sendCommand(
     deviceId: string,
-    type: "resync" | "reboot" | "screenshot",
+    type: "resync" | "reboot" | "screenshot" | "update",
   ) {
     if (type === "reboot") {
       const ok = window.confirm(
         "Reiniciar este device? Requer Device Owner no Edge.",
+      );
+      if (!ok) return;
+    }
+    if (type === "update") {
+      const ok = window.confirm(
+        "Atualizar o app Edge a partir da release do GitHub? Idealmente com Device Owner para instalação silenciosa.",
       );
       if (!ok) return;
     }
@@ -449,7 +462,9 @@ export default function DevicesPage() {
           ? "Re-sync enfileirado"
           : type === "screenshot"
             ? "Screenshot solicitado"
-            : "Reboot enfileirado",
+            : type === "update"
+              ? "Atualização enfileirada — o Edge baixa no próximo heartbeat"
+              : "Reboot enfileirado",
       );
       if (historyDevice?.id === deviceId) {
         await openHistory(historyDevice);
@@ -938,8 +953,17 @@ export default function DevicesPage() {
                     <MetaRow
                       icon={PackageIcon}
                       label="App"
-                      value={d.appVersion ?? "—"}
+                      value={
+                        d.updateAvailable
+                          ? `${d.appVersion ?? "—"} → ${d.latestEdgeVersion}`
+                          : (d.appVersion ?? "—")
+                      }
                     />
+                    {d.updateAvailable ? (
+                      <div className="pt-1">
+                        <Badge variant="default">Atualização disponível</Badge>
+                      </div>
+                    ) : null}
                     <MetaRow
                       icon={ClockIcon}
                       label="Timezone"
@@ -993,6 +1017,16 @@ export default function DevicesPage() {
                     >
                       Screenshot
                     </Button>
+                    {d.updateAvailable ? (
+                      <Button
+                        size="sm"
+                        disabled={busyId === d.id}
+                        onClick={() => void sendCommand(d.id, "update")}
+                      >
+                        <DownloadIcon className="mr-1 size-3.5" />
+                        Atualizar
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="destructive"

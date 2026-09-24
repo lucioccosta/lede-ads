@@ -68,6 +68,15 @@ export class HeartbeatDto {
   @IsOptional()
   @IsString()
   timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  appFlavor?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  appVersionCode?: number;
 }
 
 export class AckCommandDto {

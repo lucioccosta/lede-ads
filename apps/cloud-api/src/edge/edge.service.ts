@@ -13,6 +13,7 @@ import {
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CapacityService } from '../capacity/capacity.service';
+import { TickerService } from '../ticker/ticker.service';
 import { zonedDayBounds, zonedParts } from '../common/timezone';
 import { toPublicUrl } from '../common/public-url';
 import {
@@ -65,7 +66,13 @@ export class EdgeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly capacity: CapacityService,
+    private readonly ticker: TickerService,
   ) {}
+
+  async getTicker(token: string) {
+    await this.byToken(token);
+    return this.ticker.getTicker();
+  }
 
   async pair(dto: PairDeviceDto) {
     const device = await this.prisma.device.findFirst({
@@ -583,6 +590,10 @@ export class EdgeService {
         status: DeviceStatus.online,
         lastHeartbeatAt: new Date(),
         appVersion: dto.appVersion,
+        ...(dto.appVersionCode != null
+          ? { appVersionCode: dto.appVersionCode }
+          : {}),
+        ...(dto.appFlavor ? { appFlavor: dto.appFlavor } : {}),
         freeStorageBytes: BigInt(dto.freeStorageBytes),
         ...(dto.totalStorageBytes != null
           ? { totalStorageBytes: BigInt(dto.totalStorageBytes) }
@@ -608,10 +619,17 @@ export class EdgeService {
       where: { deviceId: device.id, status: DeviceCommandStatus.pending },
       orderBy: { createdAt: 'asc' },
       take: 10,
-      select: { id: true, type: true },
+      select: { id: true, type: true, payloadJson: true },
     });
 
-    return { ok: true, commands };
+    return {
+      ok: true,
+      commands: commands.map((c) => ({
+        id: c.id,
+        type: c.type,
+        payload: c.payloadJson ?? null,
+      })),
+    };
   }
 
   async ackCommand(token: string, commandId: string, dto: AckCommandDto) {

@@ -2,15 +2,18 @@ package com.lede.edge.ui
 
 import android.content.Context
 import android.graphics.Color
+import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.load
+import com.lede.edge.R
 import com.lede.edge.data.SyncScene
 import com.lede.edge.data.SyncZone
 import kotlin.math.max
@@ -19,6 +22,10 @@ import kotlin.math.roundToInt
 /**
  * Compõe uma cena multi-zona no container, escalando x/y/w/h do layout
  * lógico para o tamanho da tela.
+ *
+ * Vídeo usa [PlayerView] com TextureView (`zone_video.xml`) para respeitar a
+ * rotação do [OrientationHelper] em boxes portrait — SurfaceView ignora
+ * `View.rotation` do pai e aparece na orientação contrária.
  */
 class ZoneComposer(private val context: Context) {
     private val players = mutableListOf<ExoPlayer>()
@@ -31,6 +38,12 @@ class ZoneComposer(private val context: Context) {
 
     fun compose(container: FrameLayout, scene: SyncScene) {
         clear(container)
+
+        // Aguarda layout se ainda não medido (evita scale errado / “fullscreen”)
+        if (container.width <= 0 || container.height <= 0) {
+            container.post { compose(container, scene) }
+            return
+        }
 
         val screenW = max(1, container.width)
         val screenH = max(1, container.height)
@@ -74,15 +87,12 @@ class ZoneComposer(private val context: Context) {
         }
 
         return if (media.type == "video") {
-            val playerView = PlayerView(context).apply {
-                useController = false
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-            }
+            val playerView = LayoutInflater.from(context)
+                .inflate(R.layout.zone_video, null, false) as PlayerView
+            playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             val exo = ExoPlayer.Builder(context).build().also { p ->
                 p.repeatMode = Player.REPEAT_MODE_ONE
+                p.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                 p.setMediaItem(MediaItem.fromUri(media.url))
                 p.prepare()
                 p.playWhenReady = true

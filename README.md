@@ -181,25 +181,24 @@ Prefixo global: `/api`.
 ## Edge Android
 
 Guia completo: [`docs/EDGE.md`](docs/EDGE.md)  
-Artefatos: [`releases/edge/`](releases/edge/) — APKs de produção nas [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases).
+Artefatos: [`releases/edge/`](releases/edge/) — APK de produção nas [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases).
 
-| Ambiente | Pasta | Package | API |
-|----------|-------|---------|-----|
-| Casa (dev) | [`casa`](releases/edge/casa/) | `com.lede.edge.casa` | `http://192.168.10.142:3001/api` |
-| Fios (dev) | [`fios`](releases/edge/fios/) | `com.lede.edge.fios` | `http://192.168.55.2:3001/api` |
-| Prod / Aquario | [`aquario-stv2000-plus`](releases/edge/aquario-stv2000-plus/) | `com.lede.edge` | `https://api.lede.tv.br/api` |
+| targetId | Pasta | Package | API | GitHub |
+|----------|-------|---------|-----|--------|
+| `sb3000` | [`sb3000`](releases/edge/sb3000/) | `com.lede.edge` | `https://api.lede.tv.br/api` | **Sim (OTA)** |
+| `sb3000-fios` | [`sb3000-fios`](releases/edge/sb3000-fios/) | `com.lede.edge.fios` | LAN Fios | Não |
+| `sb3000-casa` | [`sb3000-casa`](releases/edge/sb3000-casa/) | `com.lede.edge.casa` | LAN Casa | Não |
 
 ```bash
 cd apps/edge-android
-./gradlew exportCasaApk      # LAN casa
-./gradlew exportFiosApk      # LAN fios
-./gradlew exportSideloadApk  # produção
+./gradlew exportSb3000Apk        # produção → GitHub
+./gradlew exportSb3000FiosApk    # dev Fios (local)
+./gradlew exportSb3000CasaApk    # dev Casa (local)
 ```
 
 Após parear, o player entra em kiosk (Home + lock task).  
-**Sair (v0.3.2+):** Volume+ segurado + Voltar ×3, ou Voltar ×7.  
+**Sair:** Volume+ segurado + Voltar ×3, ou Voltar ×7 → launcher Nova.  
 Telemetria no heartbeat: CPU, RAM, disco, uptime — visível em **Telas**.
-
 ### Offline e kiosk
 
 - Mídias baixadas para `filesDir/media/{checksum}`; playlist via `file://`  

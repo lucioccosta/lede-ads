@@ -1,9 +1,11 @@
-# APK LEDE Edge — Aquario STV-2000 Plus 4
+# APK LEDE Edge — SB3000
 
 Documentação consolidada em:
 
 **[`docs/EDGE.md`](EDGE.md)**  
-**[`releases/edge/aquario-stv2000-plus/README.md`](../releases/edge/aquario-stv2000-plus/README.md)**
+**[`releases/edge/sb3000/README.md`](../releases/edge/sb3000/README.md)**
 
-API de produção: `https://api.lede.tv.br/api`  
-Downloads: [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases)
+- Produção / OTA: `lede-edge-sb3000-v{X.Y.Z}.apk`
+- Dev local: `sb3000-fios`, `sb3000-casa` (não publicar no GitHub)
+
+Downloads de produção: [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases)

@@ -66,6 +66,8 @@ class EdgeApi {
     ): HeartbeatResult = withContext(Dispatchers.IO) {
         val bodyJson = JSONObject()
             .put("appVersion", BuildConfig.VERSION_NAME)
+            .put("appVersionCode", BuildConfig.VERSION_CODE)
+            .put("appFlavor", BuildConfig.ENV_NAME)
             .put("freeStorageBytes", telemetry.freeStorageBytes)
             .put("totalStorageBytes", telemetry.totalStorageBytes)
             .put("ramAvailBytes", telemetry.ramAvailBytes)
@@ -93,10 +95,22 @@ class EdgeApi {
             if (arr != null) {
                 for (i in 0 until arr.length()) {
                     val c = arr.getJSONObject(i)
+                    val payloadObj = c.optJSONObject("payload")
+                    val payload = if (payloadObj != null) {
+                        UpdatePayload(
+                            apkUrl = payloadObj.optString("apkUrl", ""),
+                            versionName = payloadObj.optString("versionName", ""),
+                            assetName = payloadObj.optString("assetName", ""),
+                            releaseTag = payloadObj.optString("releaseTag", ""),
+                        )
+                    } else {
+                        null
+                    }
                     commands.add(
                         RemoteCommand(
                             id = c.getString("id"),
                             type = c.getString("type"),
+                            payload = payload,
                         ),
                     )
                 }
@@ -156,6 +170,23 @@ class EdgeApi {
         }
     }
 
+    suspend fun ticker(token: String): TickerPayload = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("${BuildConfig.API_BASE_URL}/edge/ticker")
+            .header("x-device-token", token)
+            .get()
+            .build()
+        client.newCall(req).execute().use { res ->
+            val text = res.body?.string().orEmpty()
+            if (!res.isSuccessful) {
+                if (res.code == 401) throw DeviceUnauthorizedException()
+                error(text.ifBlank { "Falha no ticker (${res.code})" })
+            }
+            moshi.adapter(TickerPayload::class.java).fromJson(text)
+                ?: error("Ticker inválido")
+        }
+    }
+
     suspend fun uploadScreenshot(token: String, file: File) = withContext(Dispatchers.IO) {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -193,6 +224,14 @@ data class HeartbeatResult(
 data class RemoteCommand(
     val id: String,
     val type: String,
+    val payload: UpdatePayload? = null,
+)
+
+data class UpdatePayload(
+    val apkUrl: String = "",
+    val versionName: String = "",
+    val assetName: String = "",
+    val releaseTag: String = "",
 )
 
 data class SyncManifest(
@@ -236,4 +275,18 @@ data class SyncMedia(
     val checksum: String,
     val durationMs: Int,
     val mimeType: String,
+)
+
+data class TickerPayload(
+    val updatedAt: String? = null,
+    val text: String = "",
+    val items: List<TickerItem> = emptyList(),
+)
+
+data class TickerItem(
+    val key: String = "",
+    val label: String = "",
+    val value: String = "",
+    val changePct: Double? = null,
+    val icon: String = "",
 )

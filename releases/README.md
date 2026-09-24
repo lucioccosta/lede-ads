@@ -1,38 +1,36 @@
-# Releases — Edge
+# Releases — Edge (Proeletronic SB3000)
 
-Artefatos de instalação **manual** (sideload).
+Artefatos de sideload. APKs **não** entram no Git.
 
-Os APKs **não** entram no Git — só docs nesta árvore; builds locais e [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases) para produção.
+Convenção:
 
-Documentação operacional: [`docs/EDGE.md`](../docs/EDGE.md)
+```text
+lede-edge-{targetId}-v{X.Y.Z}.apk
+```
 
-## Ambientes de desenvolvimento
+| targetId | Uso | Flavor | Package | Pasta | Task | GitHub Releases |
+|----------|-----|--------|---------|-------|------|-----------------|
+| **`sb3000`** | **Produção + OTA** | `prod` | `com.lede.edge` | [`edge/sb3000`](edge/sb3000/) | `exportSb3000Apk` | **Sim** — único asset OTA |
+| `sb3000-fios` | Dev local (API Fios) | `fios` | `com.lede.edge.fios` | [`edge/sb3000-fios`](edge/sb3000-fios/) | `exportSb3000FiosApk` | **Não** |
+| `sb3000-casa` | Dev local (API Casa) | `casa` | `com.lede.edge.casa` | [`edge/sb3000-casa`](edge/sb3000-casa/) | `exportSb3000CasaApk` | **Não** |
 
-| Pasta | Package | API padrão |
-|-------|---------|------------|
-| [`edge/casa`](edge/casa/) | `com.lede.edge.casa` | `http://192.168.10.142:3001/api` |
-| [`edge/fios`](edge/fios/) | `com.lede.edge.fios` | `http://192.168.55.2:3001/api` |
+Exemplos:
+
+- `lede-edge-sb3000-v0.5.0.apk` ← publicar na release
+- `lede-edge-sb3000-fios-v0.5.0.apk` ← só máquina local
+- `lede-edge-sb3000-casa-v0.5.0.apk` ← só máquina local
+
+## Build
 
 ```bash
 cd apps/edge-android
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-./gradlew exportCasaApk   # → releases/edge/casa/
-./gradlew exportFiosApk   # → releases/edge/fios/
+export JAVA_HOME="/Users/luciocosta/Library/Java/JavaVirtualMachines/jbr-21.0.11/Contents/Home"
+
+./gradlew exportSb3000Apk        # produção → GitHub
+./gradlew exportSb3000FiosApk    # LAN Fios (local)
+./gradlew exportSb3000CasaApk    # LAN Casa (local)
 ```
 
-## Produção (dispositivo)
+Tag sugerida no GitHub: `edge-v0.5.0` com **apenas** `lede-edge-sb3000-v0.5.0.apk`.
 
-| Pasta | Dispositivo | API |
-|-------|-------------|-----|
-| [`edge/aquario-stv2000-plus`](edge/aquario-stv2000-plus/) | Aquario STV-2000 Plus 4 | `https://api.lede.tv.br/api` |
-
-```bash
-./gradlew exportSideloadApk   # → releases/edge/aquario-stv2000-plus/
-```
-
-## Sair do kiosk (v0.3.2+)
-
-1. Segure **Volume +** + **Voltar** ×3, ou  
-2. **Voltar** ×7  
-
-Detalhes e Device Owner: [`docs/EDGE.md`](../docs/EDGE.md).
+Guia: [`docs/EDGE.md`](../docs/EDGE.md)

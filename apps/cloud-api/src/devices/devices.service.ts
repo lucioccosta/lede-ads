@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   Device,
   DeviceCommandStatus,
@@ -16,6 +20,7 @@ import {
   CreateDeviceDto,
   UpdateDeviceDto,
 } from './dto/device.dto';
+import { EdgeReleaseService } from './edge-release.service';
 
 const OFFLINE_MS = 2 * 60 * 1000;
 
@@ -42,14 +47,17 @@ function serializeDevice(device: Device | DeviceWithRels) {
 
 @Injectable()
 export class DevicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly releases: EdgeReleaseService,
+  ) {}
 
   async findAll() {
     const devices = await this.prisma.device.findMany({
       orderBy: { name: 'asc' },
       include: deviceInclude,
     });
-    return devices.map(serializeDevice);
+    return this.withUpdateInfo(devices.map(serializeDevice));
   }
 
   async findForClient(clientId: string) {
@@ -74,7 +82,7 @@ export class DevicesService {
       include: deviceInclude,
     });
     const now = Date.now();
-    return devices.map((d) => {
+    const base = devices.map((d) => {
       const last = d.lastHeartbeatAt?.getTime() ?? 0;
       const online = now - last < OFFLINE_MS;
       return {
@@ -86,6 +94,46 @@ export class DevicesService {
             : 'offline',
       };
     });
+    return this.withUpdateInfo(base);
+  }
+
+  async listEdgeReleases() {
+    const assets = await this.releases.listLatestAssets(true);
+    const byFlavor: Record<string, unknown> = {};
+    for (const flavor of ['prod', 'casa', 'fios'] as const) {
+      byFlavor[flavor] = await this.releases.resolveForFlavor(flavor);
+    }
+    return {
+      convention: 'lede-edge-{targetId}-v{X.Y.Z}.apk',
+      githubTarget: 'sb3000',
+      localTargets: ['sb3000-fios', 'sb3000-casa'],
+      assets,
+      latestByFlavor: byFlavor,
+    };
+  }
+
+  private async withUpdateInfo<T extends {
+    appVersion?: string | null;
+    appVersionCode?: number | null;
+    appFlavor?: string | null;
+  }>(devices: T[]) {
+    const enriched = await Promise.all(
+      devices.map(async (d) => {
+        const latest = await this.releases.resolveForFlavor(d.appFlavor);
+        const updateAvailable = this.releases.needsUpdate({
+          appVersion: d.appVersion,
+          appVersionCode: d.appVersionCode,
+          latest,
+        });
+        return {
+          ...d,
+          updateAvailable,
+          latestEdgeVersion: latest?.versionName ?? null,
+          latestEdgeAsset: latest?.assetName ?? null,
+        };
+      }),
+    );
+    return enriched;
   }
 
   async findOne(id: string) {
@@ -94,12 +142,14 @@ export class DevicesService {
       include: deviceInclude,
     });
     if (!device) throw new NotFoundException('Device não encontrado');
-    return serializeDevice(device);
+    const [withUpdate] = await this.withUpdateInfo([serializeDevice(device)]);
+    return withUpdate;
   }
 
   create(dto: CreateDeviceDto) {
     return this.createPairing(dto);
   }
+
 
   async createPairing(dto: CreateDeviceDto) {
     const pairingCode = randomBytes(3).toString('hex').toUpperCase();
@@ -224,6 +274,8 @@ export class DevicesService {
         lastHeartbeatAt: null,
         lastScreenshotUrl: null,
         appVersion: null,
+        appVersionCode: null,
+        appFlavor: null,
         freeStorageBytes: null,
         totalStorageBytes: null,
         ramAvailBytes: null,
@@ -248,11 +300,43 @@ export class DevicesService {
   }
 
   async enqueueCommand(id: string, dto: CreateDeviceCommandDto) {
-    await this.findOne(id);
+    const device = await this.prisma.device.findUnique({ where: { id } });
+    if (!device) throw new NotFoundException('Device não encontrado');
+
+    let payloadJson: Prisma.InputJsonValue | undefined;
+
+    if (dto.type === 'update') {
+      const latest = await this.releases.resolveForFlavor(device.appFlavor);
+      if (!latest) {
+        throw new BadRequestException(
+          `Nenhum APK Edge encontrado no GitHub para o flavor "${device.appFlavor || 'desconhecido'}". Publique uma release com o asset correto.`,
+        );
+      }
+      if (
+        !this.releases.needsUpdate({
+          appVersion: device.appVersion,
+          appVersionCode: device.appVersionCode,
+          latest,
+        })
+      ) {
+        throw new BadRequestException(
+          `Device já está em ${device.appVersion || '?'} (latest ${latest.versionName})`,
+        );
+      }
+      payloadJson = {
+        apkUrl: latest.apkUrl,
+        versionName: latest.versionName,
+        assetName: latest.assetName,
+        releaseTag: latest.tagName,
+        sizeBytes: latest.sizeBytes,
+      };
+    }
+
     return this.prisma.deviceCommand.create({
       data: {
         deviceId: id,
         type: dto.type as DeviceCommandType,
+        ...(payloadJson != null ? { payloadJson } : {}),
       },
     });
   }

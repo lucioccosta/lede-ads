@@ -4,9 +4,21 @@ plugins {
 }
 
 /** Pastas de artefato (relativas à raiz do monorepo). */
-val EDGE_DEVICE_DIR = "releases/edge/aquario-stv2000-plus"
-val EDGE_CASA_DIR = "releases/edge/casa"
-val EDGE_FIOS_DIR = "releases/edge/fios"
+val EDGE_SB3000_DIR = "releases/edge/sb3000"
+val EDGE_SB3000_FIOS_DIR = "releases/edge/sb3000-fios"
+val EDGE_SB3000_CASA_DIR = "releases/edge/sb3000-casa"
+
+/**
+ * Convenção de APK:
+ *   lede-edge-{targetId}-v{X.Y.Z}.apk
+ *
+ * targetId:
+ *   sb3000       — produção (GitHub Releases + OTA)
+ *   sb3000-fios  — desenvolvimento local (API Fios) — NÃO publicar no GitHub
+ *   sb3000-casa  — desenvolvimento local (API Casa) — NÃO publicar no GitHub
+ */
+fun edgeApkName(targetId: String, version: String) =
+    "lede-edge-$targetId-v$version.apk"
 
 fun readLocalProp(key: String): String? {
     val localFile = rootProject.file("local.properties")
@@ -30,7 +42,8 @@ fun apiUrl(propKey: String, default: String): String {
 
 val prodApi = apiUrl("lede.apiBaseUrl", "https://api.lede.tv.br/api")
 val casaApi = apiUrl("lede.casaApiBaseUrl", "http://192.168.10.142:3001/api")
-val fiosApi = apiUrl("lede.fiosApiBaseUrl", "http://192.168.55.2:3001/api")
+// Rede Fios / Proeletronic SB3000 (LAN do servidor de desenvolvimento)
+val fiosApi = apiUrl("lede.fiosApiBaseUrl", "http://192.168.77.207:3001/api")
 
 fun repoRoot(): java.io.File =
     rootProject.projectDir.resolve("../..").normalize()
@@ -44,8 +57,8 @@ android {
         // Aquario STV-2000 Plus = Android 10 (API 29), ARM Cortex-A53
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.3.3"
+        versionCode = 22
+        versionName = "0.5.4"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
@@ -58,22 +71,30 @@ android {
             dimension = "env"
             buildConfigField("String", "API_BASE_URL", "\"$prodApi\"")
             buildConfigField("String", "ENV_NAME", "\"prod\"")
+            // Proeletronic SB3000 — launcher nativo (produção)
+            buildConfigField("String", "OEM_LAUNCHER_PACKAGE", "\"com.a.nova.launcher\"")
+            buildConfigField("String", "OEM_LAUNCHER_ACTIVITY", "\"\"")
+            buildConfigField("String", "OEM_LAUNCHER_LABEL", "\"Nova\"")
         }
         create("casa") {
             dimension = "env"
             applicationIdSuffix = ".casa"
             versionNameSuffix = "-casa"
-            resValue("string", "app_name", "LEDE Edge Casa")
             buildConfigField("String", "API_BASE_URL", "\"$casaApi\"")
             buildConfigField("String", "ENV_NAME", "\"casa\"")
+            buildConfigField("String", "OEM_LAUNCHER_PACKAGE", "\"com.a.nova.launcher\"")
+            buildConfigField("String", "OEM_LAUNCHER_ACTIVITY", "\"\"")
+            buildConfigField("String", "OEM_LAUNCHER_LABEL", "\"Nova\"")
         }
         create("fios") {
             dimension = "env"
             applicationIdSuffix = ".fios"
             versionNameSuffix = "-fios"
-            resValue("string", "app_name", "LEDE Edge Fios")
             buildConfigField("String", "API_BASE_URL", "\"$fiosApi\"")
             buildConfigField("String", "ENV_NAME", "\"fios\"")
+            buildConfigField("String", "OEM_LAUNCHER_PACKAGE", "\"com.a.nova.launcher\"")
+            buildConfigField("String", "OEM_LAUNCHER_ACTIVITY", "\"\"")
+            buildConfigField("String", "OEM_LAUNCHER_LABEL", "\"Nova\"")
         }
     }
 
@@ -166,31 +187,60 @@ fun registerExportApk(
     }
 }
 
-val versionName = android.defaultConfig.versionName
+val versionName = android.defaultConfig.versionName!!
 
+/** Produção — publicar no GitHub Releases (OTA). */
 registerExportApk(
-    taskName = "exportSideloadApk",
+    taskName = "exportSb3000Apk",
     assembleTask = "assembleProdRelease",
     apkDirVariant = "prod/release",
-    outRelDir = EDGE_DEVICE_DIR,
-    apkFileName = "lede-edge-aquario-stv2000-plus-v$versionName.apk",
+    outRelDir = EDGE_SB3000_DIR,
+    apkFileName = edgeApkName("sb3000", versionName),
     apiUrl = prodApi,
 )
 
+/** Alias legado → produção SB3000. */
+tasks.register("exportSideloadApk") {
+    dependsOn("exportSb3000Apk")
+}
+
+/** Dev local Fios — NÃO publicar no GitHub. */
 registerExportApk(
-    taskName = "exportCasaApk",
+    taskName = "exportSb3000FiosApk",
+    assembleTask = "assembleFiosRelease",
+    apkDirVariant = "fios/release",
+    outRelDir = EDGE_SB3000_FIOS_DIR,
+    apkFileName = edgeApkName("sb3000-fios", versionName),
+    apiUrl = fiosApi,
+)
+
+tasks.register("exportFiosProsb3000Apk") {
+    dependsOn("exportSb3000FiosApk")
+    doLast {
+        logger.warn("exportFiosProsb3000Apk está deprecado — use exportSb3000FiosApk")
+    }
+}
+
+tasks.register("exportFiosApk") {
+    dependsOn("exportSb3000FiosApk")
+    doLast {
+        logger.warn("exportFiosApk está deprecado — use exportSb3000FiosApk")
+    }
+}
+
+/** Dev local Casa — NÃO publicar no GitHub. */
+registerExportApk(
+    taskName = "exportSb3000CasaApk",
     assembleTask = "assembleCasaRelease",
     apkDirVariant = "casa/release",
-    outRelDir = EDGE_CASA_DIR,
-    apkFileName = "lede-edge-casa-v$versionName-casa.apk",
+    outRelDir = EDGE_SB3000_CASA_DIR,
+    apkFileName = edgeApkName("sb3000-casa", versionName),
     apiUrl = casaApi,
 )
 
-registerExportApk(
-    taskName = "exportFiosApk",
-    assembleTask = "assembleFiosRelease",
-    apkDirVariant = "fios/release",
-    outRelDir = EDGE_FIOS_DIR,
-    apkFileName = "lede-edge-fios-v$versionName-fios.apk",
-    apiUrl = fiosApi,
-)
+tasks.register("exportCasaApk") {
+    dependsOn("exportSb3000CasaApk")
+    doLast {
+        logger.warn("exportCasaApk está deprecado — use exportSb3000CasaApk")
+    }
+}

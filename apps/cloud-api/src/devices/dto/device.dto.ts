@@ -84,8 +84,8 @@ export class UpdateDeviceDto {
 }
 
 export class CreateDeviceCommandDto {
-  @IsIn(['resync', 'reboot', 'screenshot'])
-  type!: 'resync' | 'reboot' | 'screenshot';
+  @IsIn(['resync', 'reboot', 'screenshot', 'update'])
+  type!: 'resync' | 'reboot' | 'screenshot' | 'update';
 }
 
 export class BatchTimezoneDto {

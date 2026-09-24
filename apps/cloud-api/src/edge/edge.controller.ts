@@ -40,6 +40,12 @@ export class EdgeController {
     return this.edge.sync(token);
   }
 
+  @Get('ticker')
+  tickerFeed(@Headers('x-device-token') token?: string) {
+    if (!token) throw new UnauthorizedException('Device token obrigatório');
+    return this.edge.getTicker(token);
+  }
+
   @Post('heartbeat')
   heartbeat(
     @Headers('x-device-token') token: string | undefined,

@@ -67,6 +67,15 @@ S3_PUBLIC_URL=https://object.sp2.eveo.com.br/48806696000174:lede-arquivos
 S3_FORCE_PATH_STYLE=true
 ```
 
+Edge OTA (produção):
+
+```env
+GITHUB_REPO=lucioccosta/lede-ads
+# GITHUB_TOKEN=<opcional>
+```
+
+Publique `lede-edge-sb3000-v{X.Y.Z}.apk` nas [GitHub Releases](https://github.com/lucioccosta/lede-ads/releases). Em **Telas**, devices `prod` desatualizados mostram **Atualizar**.
+
 
 Importante:
 

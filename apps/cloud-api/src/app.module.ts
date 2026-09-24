@@ -18,6 +18,7 @@ import { HistoryModule } from './history/history.module';
 import { StorageModule } from './storage/storage.module';
 import { CapacityModule } from './capacity/capacity.module';
 import { DeviceGroupsModule } from './device-groups/device-groups.module';
+import { TickerModule } from './ticker/ticker.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { DeviceGroupsModule } from './device-groups/device-groups.module';
     ReportsModule,
     UploadsModule,
     HistoryModule,
+    TickerModule,
   ],
 })
 export class AppModule {}

@@ -29,6 +29,10 @@ async function bootstrap() {
     }),
   );
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
+  // APKs locais para OTA de dev (sb3000-fios / sb3000-casa) e fallback prod
+  app.useStaticAssets(join(process.cwd(), '..', '..', 'releases', 'edge'), {
+    prefix: '/edge-apks/',
+  });
   app.setGlobalPrefix('api');
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port, '0.0.0.0');

@@ -1,20 +1,35 @@
 package com.lede.edge.ui
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
+import android.content.ComponentName
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
+import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.PixelCopy
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import com.lede.edge.ApkUpdateInstaller
+import com.lede.edge.BuildConfig
 import com.lede.edge.KioskPolicy
+import com.lede.edge.R
 import com.lede.edge.data.DeviceStore
 import com.lede.edge.data.DeviceTelemetryCollector
 import com.lede.edge.data.DeviceUnauthorizedException
@@ -25,20 +40,18 @@ import com.lede.edge.data.PopEvent
 import com.lede.edge.data.ProofOfPlayQueue
 import com.lede.edge.data.RemoteCommand
 import com.lede.edge.data.SyncScene
+import com.lede.edge.data.TickerItem
 import com.lede.edge.databinding.ActivityPlayerBinding
-import android.content.ComponentName
-import android.content.Intent
-import android.os.SystemClock
-import android.provider.Settings
-import android.view.KeyEvent
-import android.widget.Toast
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
 import java.time.Instant
+import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 
 class PlayerActivity : AppCompatActivity() {
@@ -61,6 +74,11 @@ class PlayerActivity : AppCompatActivity() {
     private var escapeWindowStart = 0L
     private var volumeUpHeld = false
     private var escapingKiosk = false
+    private val tickerArrowAnims = mutableListOf<ObjectAnimator>()
+    private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    private var tickerAllItems: List<TickerItem> = emptyList()
+    private var tickerPages: List<List<TickerItem>> = emptyList()
+    private var tickerPageIndex = 0
 
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
@@ -99,6 +117,33 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private val tickerRunnable = object : Runnable {
+        override fun run() {
+            refreshTicker()
+            // Poll frequente: ligar/desligar no Cloud reflete sem atualizar o APK
+            handler.postDelayed(this, 60_000L)
+        }
+    }
+
+    private val clockRunnable = object : Runnable {
+        override fun run() {
+            if (binding.tickerBar.visibility == View.VISIBLE) {
+                binding.tickerClock.text = clockFormat.format(Date())
+            }
+            handler.postDelayed(this, 1_000L)
+        }
+    }
+
+    private val tickerPageRunnable = object : Runnable {
+        override fun run() {
+            if (binding.tickerBar.visibility == View.VISIBLE && tickerPages.size > 1) {
+                tickerPageIndex = (tickerPageIndex + 1) % tickerPages.size
+                showTickerPage(tickerPages[tickerPageIndex])
+            }
+            handler.postDelayed(this, TICKER_PAGE_MS)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -129,6 +174,9 @@ class PlayerActivity : AppCompatActivity() {
         handler.post(heartbeatRunnable)
         handler.postDelayed(syncRunnable, 60_000)
         handler.postDelayed(screenshotRunnable, 15_000)
+        handler.post(tickerRunnable)
+        handler.post(clockRunnable)
+        handler.postDelayed(tickerPageRunnable, TICKER_PAGE_MS)
     }
 
     override fun onResume() {
@@ -179,16 +227,20 @@ class PlayerActivity : AppCompatActivity() {
         handler.removeCallbacks(heartbeatRunnable)
         handler.removeCallbacks(syncRunnable)
         handler.removeCallbacks(screenshotRunnable)
+        handler.removeCallbacks(tickerRunnable)
+        handler.removeCallbacks(clockRunnable)
+        handler.removeCallbacks(tickerPageRunnable)
+        clearTickerArrowAnims()
 
         runCatching { stopLockTask() }
 
         Toast.makeText(
             this,
-            "Abrindo launcher Aquario…",
+            "Abrindo launcher ${BuildConfig.OEM_LAUNCHER_LABEL}…",
             Toast.LENGTH_SHORT,
         ).show()
 
-        val launched = runCatching { startAquarioLauncher() }.isSuccess
+        val launched = runCatching { startOemLauncher() }.isSuccess
         if (!launched) {
             runCatching {
                 startActivity(
@@ -206,26 +258,30 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** Abre o launcher nativo do STV-2000 Plus. */
-    private fun startAquarioLauncher() {
-        val explicit = Intent(Intent.ACTION_MAIN).apply {
-            component = ComponentName(AQUARIO_LAUNCHER_PACKAGE, AQUARIO_LAUNCHER_ACTIVITY)
-            addCategory(Intent.CATEGORY_LAUNCHER)
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
-            )
-        }
-        try {
-            startActivity(explicit)
-            return
-        } catch (_: Exception) {
-            // fallback abaixo
+    /** Abre o launcher OEM do device (Aquario / Nova no SB3000). */
+    private fun startOemLauncher() {
+        val pkg = BuildConfig.OEM_LAUNCHER_PACKAGE
+        val activity = BuildConfig.OEM_LAUNCHER_ACTIVITY
+        if (activity.isNotBlank()) {
+            val explicit = Intent(Intent.ACTION_MAIN).apply {
+                component = ComponentName(pkg, activity)
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+                )
+            }
+            try {
+                startActivity(explicit)
+                return
+            } catch (_: Exception) {
+                // fallback abaixo
+            }
         }
 
-        val launch = packageManager.getLaunchIntentForPackage(AQUARIO_LAUNCHER_PACKAGE)
-            ?: error("Launcher Aquario não encontrado ($AQUARIO_LAUNCHER_PACKAGE)")
+        val launch = packageManager.getLaunchIntentForPackage(pkg)
+            ?: error("Launcher não encontrado ($pkg)")
         launch.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -267,6 +323,33 @@ class PlayerActivity : AppCompatActivity() {
                             command.id,
                             "failed",
                             "Reboot requer Device Owner",
+                        )
+                    }
+                }
+            }
+            "update" -> {
+                val url = command.payload?.apkUrl?.trim().orEmpty()
+                if (url.isBlank()) {
+                    runCatching {
+                        api.ackCommand(token, command.id, "failed", "URL do APK ausente")
+                    }
+                    return
+                }
+                Toast.makeText(
+                    this,
+                    "Atualizando Edge ${command.payload?.versionName ?: ""}…",
+                    Toast.LENGTH_LONG,
+                ).show()
+                val result = ApkUpdateInstaller.downloadAndInstall(this, url)
+                if (result.isSuccess) {
+                    runCatching { api.ackCommand(token, command.id, "done") }
+                } else {
+                    runCatching {
+                        api.ackCommand(
+                            token,
+                            command.id,
+                            "failed",
+                            result.exceptionOrNull()?.message ?: "Falha no update",
                         )
                     }
                 }
@@ -431,6 +514,135 @@ class PlayerActivity : AppCompatActivity() {
         playCurrent()
     }
 
+    private fun refreshTicker() {
+        val token = store.deviceToken ?: return
+        lifecycleScope.launch {
+            runCatching { api.ticker(token) }
+                .onSuccess { payload ->
+                    if (payload.items.isEmpty() && payload.text.isBlank()) {
+                        tickerAllItems = emptyList()
+                        tickerPages = emptyList()
+                        binding.tickerBar.visibility = View.GONE
+                        return@onSuccess
+                    }
+                    tickerAllItems = payload.items
+                    binding.tickerClock.text = clockFormat.format(Date())
+                    binding.tickerBar.visibility = View.VISIBLE
+                    binding.tickerItems.post {
+                        rebuildTickerPagesAndShow()
+                    }
+                }
+                .onFailure { err ->
+                    if (err is DeviceUnauthorizedException) {
+                        goToPairing()
+                    }
+                }
+        }
+    }
+
+    private fun rebuildTickerPagesAndShow() {
+        val maxWidth = binding.tickerItems.width
+        tickerPages = paginateTickerItems(tickerAllItems, maxWidth)
+        tickerPageIndex = 0
+        if (tickerPages.isNotEmpty()) {
+            showTickerPage(tickerPages[0])
+        }
+    }
+
+    private fun paginateTickerItems(
+        items: List<TickerItem>,
+        maxWidth: Int,
+    ): List<List<TickerItem>> {
+        if (items.isEmpty()) return emptyList()
+        if (maxWidth <= 0) return listOf(items)
+
+        val pages = mutableListOf<MutableList<TickerItem>>()
+        var current = mutableListOf<TickerItem>()
+        var used = 0
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(
+            maxOf(binding.tickerItems.height, 1),
+            View.MeasureSpec.EXACTLY,
+        )
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+
+        for (item in items) {
+            val probe = LayoutInflater.from(this)
+                .inflate(R.layout.item_ticker, binding.tickerItems, false)
+            bindTickerItemView(probe, item, animate = false)
+            probe.measure(widthSpec, heightSpec)
+            val w = probe.measuredWidth
+            if (current.isNotEmpty() && used + w > maxWidth) {
+                pages += current
+                current = mutableListOf()
+                used = 0
+            }
+            current += item
+            used += w
+        }
+        if (current.isNotEmpty()) pages += current
+        return pages
+    }
+
+    private fun showTickerPage(page: List<TickerItem>) {
+        clearTickerArrowAnims()
+        val row = binding.tickerItems
+        row.removeAllViews()
+        val inflater = LayoutInflater.from(this)
+        for (item in page) {
+            val view = inflater.inflate(R.layout.item_ticker, row, false)
+            bindTickerItemView(view, item, animate = true)
+            row.addView(view)
+        }
+    }
+
+    private fun bindTickerItemView(view: View, item: TickerItem, animate: Boolean) {
+        val iconText = view.findViewById<TextView>(R.id.tickerItemIconText)
+        val label = view.findViewById<TextView>(R.id.tickerItemLabel)
+        val arrow = view.findViewById<ImageView>(R.id.tickerItemArrow)
+        val change = view.findViewById<TextView>(R.id.tickerItemChange)
+        val value = view.findViewById<TextView>(R.id.tickerItemValue)
+
+        val glyph = item.icon.trim().ifEmpty { "•" }
+        iconText.text = glyph
+        label.text = item.label.uppercase(Locale.getDefault())
+        value.text = item.value
+
+        val pct = item.changePct
+        if (pct != null) {
+            val up = pct >= 0
+            arrow.setImageResource(if (up) R.drawable.ic_ticker_up else R.drawable.ic_ticker_down)
+            arrow.visibility = View.VISIBLE
+            change.setTextColor(if (up) 0xFF16A34A.toInt() else 0xFFDC2626.toInt())
+            change.text = String.format(
+                Locale.getDefault(),
+                "%s%.2f%%",
+                if (up) "+" else "",
+                pct,
+            )
+            change.visibility = View.VISIBLE
+            if (animate) startArrowAnim(arrow, up)
+        } else {
+            arrow.visibility = View.GONE
+            change.visibility = View.GONE
+        }
+    }
+
+    private fun startArrowAnim(arrow: ImageView, up: Boolean) {
+        val delta = if (up) -3f else 3f
+        val anim = ObjectAnimator.ofFloat(arrow, View.TRANSLATION_Y, 0f, delta, 0f).apply {
+            duration = 1100L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+        tickerArrowAnims += anim
+    }
+
+    private fun clearTickerArrowAnims() {
+        tickerArrowAnims.forEach { it.cancel() }
+        tickerArrowAnims.clear()
+    }
+
     private fun showIdle(message: String) {
         advanceToken++
         composer.clear(binding.zoneContainer)
@@ -513,6 +725,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         advanceToken++
+        clearTickerArrowAnims()
         handler.removeCallbacksAndMessages(null)
         runCatching { stopLockTask() }
         composer.clear(binding.zoneContainer)
@@ -523,8 +736,6 @@ class PlayerActivity : AppCompatActivity() {
         private const val ESCAPE_WINDOW_MS = 3_000L
         private const val ESCAPE_BACK_ONLY = 7
         private const val ESCAPE_BACK_WITH_VOLUME = 3
-
-        private const val AQUARIO_LAUNCHER_PACKAGE = "com.br.aquariolauncher"
-        private const val AQUARIO_LAUNCHER_ACTIVITY = "com.br.aquariolauncher.MainActivity"
+        private const val TICKER_PAGE_MS = 10_000L
     }
 }

@@ -28,7 +28,7 @@ ENV NODE_ENV=production
 ENV PORT=3001
 
 RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates ffmpeg \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --system --gid 1001 lede \
   && useradd --system --uid 1001 --gid lede lede

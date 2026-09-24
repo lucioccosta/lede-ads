@@ -44,6 +44,7 @@ enum DeviceCommandType {
   resync
   reboot
   screenshot
+  update
 }
 
 enum DeviceCommandStatus {
@@ -255,6 +256,8 @@ model Device {
   lastHeartbeatAt   DateTime?
   lastScreenshotUrl String?
   appVersion        String?
+  appVersionCode    Int?
+  appFlavor         String?
   freeStorageBytes  BigInt?
   totalStorageBytes BigInt?
   ramAvailBytes     BigInt?
@@ -274,14 +277,15 @@ model Device {
 }
 
 model DeviceCommand {
-  id        String              @id @default(cuid())
-  deviceId  String
-  device    Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  type      DeviceCommandType
-  status    DeviceCommandStatus @default(pending)
-  error     String?
-  createdAt DateTime            @default(now())
-  ackedAt   DateTime?
+  id          String              @id @default(cuid())
+  deviceId    String
+  device      Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type        DeviceCommandType
+  status      DeviceCommandStatus @default(pending)
+  payloadJson Json?
+  error       String?
+  createdAt   DateTime            @default(now())
+  ackedAt     DateTime?
 
   @@index([deviceId, status, createdAt])
 }
@@ -346,4 +350,11 @@ model ChangeLog {
   createdAt   DateTime        @default(now())
 
   @@index([clientId, createdAt])
+}
+
+/** Configurações globais do Cloud (ex.: ticker.enabledKeys). */
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }

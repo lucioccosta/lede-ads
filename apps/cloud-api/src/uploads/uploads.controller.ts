@@ -14,11 +14,15 @@ import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { isActingAsClient, requireClientId } from '../common/condo-access';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessService } from './video-process.service';
 
 @Controller('uploads')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UploadsController {
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly videoProcess: VideoProcessService,
+  ) {}
 
   @Post()
   @Roles('lede_admin', 'lede_operator', 'client_approver')
@@ -47,8 +51,10 @@ export class UploadsController {
     }
     if (!file) throw new BadRequestException('Arquivo obrigatório');
 
-    const stored = await this.storage.putMulterFile(file, 'media');
-    const type = file.mimetype.startsWith('video/') ? 'video' : 'image';
+    // Vídeos: remove áudio antes de gravar (anúncios silent no Edge)
+    const processed = await this.videoProcess.stripAudioIfVideo(file);
+    const stored = await this.storage.putMulterFile(processed, 'media');
+    const type = processed.mimetype.startsWith('video/') ? 'video' : 'image';
 
     return {
       url: stored.url,
@@ -56,8 +62,9 @@ export class UploadsController {
       fileSize: stored.fileSize,
       checksum: stored.checksum,
       type,
-      originalName: file.originalname,
+      originalName: processed.originalname,
       key: stored.key,
+      audioStripped: type === 'video',
     };
   }
 }
