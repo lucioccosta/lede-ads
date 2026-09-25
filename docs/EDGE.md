@@ -43,6 +43,12 @@ A `RootActivity` é a entrada MAIN/HOME/LAUNCHER: encaminha para Player (pareado
 
 Abre o launcher nativo **Nova** (`com.a.nova.launcher`) e remove a task do LEDE.
 
+### Re-parear no aparelho
+
+Aperte **Volume −** **10** vezes seguidas (em até 5 s).
+
+Limpa o token local e abre a tela de pairing (equivalente ao “Re-parear” do Cloud, no Edge). Toast de progresso aos 5 e 8 toques.
+
 ### Versões anteriores (sem escape)
 
 ```bash

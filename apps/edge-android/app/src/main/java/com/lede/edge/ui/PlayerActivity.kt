@@ -75,6 +75,12 @@ class PlayerActivity : AppCompatActivity() {
     private var escapeWindowStart = 0L
     private var volumeUpHeld = false
     private var escapingKiosk = false
+
+    /** Re-parear: Volume − ×10 em até 5s. */
+    private var rePairVolumeDownCount = 0
+    private var rePairWindowStart = 0L
+    private var rePairing = false
+
     private val tickerArrowAnims = mutableListOf<ObjectAnimator>()
     private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var tickerAllItems: List<TickerItem> = emptyList()
@@ -192,6 +198,13 @@ class PlayerActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_VOLUME_UP -> {
                 volumeUpHeld = event.action != KeyEvent.ACTION_UP
             }
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (event.action == KeyEvent.ACTION_UP && registerRePairVolumeDown()) {
+                    startLocalRePair()
+                }
+                // Consome o evento para não alterar o volume do STB
+                return true
+            }
             KeyEvent.KEYCODE_BACK -> {
                 if (event.action == KeyEvent.ACTION_UP && registerEscapeBack()) {
                     escapeKiosk()
@@ -216,6 +229,33 @@ class PlayerActivity : AppCompatActivity() {
         escapeBackCount += 1
         val needed = if (volumeUpHeld) ESCAPE_BACK_WITH_VOLUME else ESCAPE_BACK_ONLY
         return escapeBackCount >= needed
+    }
+
+    /** Volume − ×10 em até [REPAIR_WINDOW_MS] → limpa token e abre tela de pairing. */
+    private fun registerRePairVolumeDown(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - rePairWindowStart > REPAIR_WINDOW_MS) {
+            rePairVolumeDownCount = 0
+            rePairWindowStart = now
+        }
+        rePairVolumeDownCount += 1
+        if (rePairVolumeDownCount in listOf(5, 8)) {
+            Toast.makeText(
+                this,
+                "Re-parear: ${rePairVolumeDownCount}/$REPAIR_VOLUME_DOWN_COUNT",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+        return rePairVolumeDownCount >= REPAIR_VOLUME_DOWN_COUNT
+    }
+
+    private fun startLocalRePair() {
+        if (rePairing || escapingKiosk) return
+        rePairing = true
+        rePairVolumeDownCount = 0
+        Toast.makeText(this, "Re-pareando… digite o novo código", Toast.LENGTH_LONG).show()
+        Log.i(TAG, "Re-parear local via Volume− ×$REPAIR_VOLUME_DOWN_COUNT")
+        goToPairing()
     }
 
     private fun escapeKiosk() {
@@ -810,6 +850,8 @@ class PlayerActivity : AppCompatActivity() {
         private const val ESCAPE_WINDOW_MS = 3_000L
         private const val ESCAPE_BACK_ONLY = 7
         private const val ESCAPE_BACK_WITH_VOLUME = 3
+        private const val REPAIR_WINDOW_MS = 5_000L
+        private const val REPAIR_VOLUME_DOWN_COUNT = 10
         private const val TICKER_PAGE_MS = 10_000L
     }
 }
