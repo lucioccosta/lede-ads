@@ -38,6 +38,7 @@ const titles: Record<string, string> = {
   "/dashboard/reports": "Amostragem",
   "/dashboard/history": "Histórico",
   "/dashboard/ticker": "Tarja de índices",
+  "/dashboard/users": "Usuários",
   "/portal": "Início",
   "/portal/devices": "Minhas telas",
   "/portal/condo": "Meu aviso",

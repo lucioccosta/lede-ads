@@ -1,14 +1,13 @@
 import {
   Injectable,
   UnauthorizedException,
-  ConflictException,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChangePasswordDto, LoginDto, RegisterDto } from './dto/auth.dto';
+import { ChangePasswordDto, LoginDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -29,27 +28,6 @@ export class AuthService {
     if (!ok) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
-    return this.tokenResponse(user);
-  }
-
-  async register(dto: RegisterDto) {
-    const exists = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-    if (exists) {
-      throw new ConflictException('E-mail já cadastrado');
-    }
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        name: dto.name,
-        role: dto.role,
-        clientId: dto.clientId,
-        passwordHash,
-      },
-      include: { client: { select: { isCondo: true } } },
-    });
     return this.tokenResponse(user);
   }
 

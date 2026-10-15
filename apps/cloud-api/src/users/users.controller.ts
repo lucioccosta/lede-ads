@@ -11,12 +11,15 @@ import {
 import { UsersService } from './users.service';
 import {
   CreateClientUserDto,
+  CreateTeamUserDto,
+  UpdateTeamUserDto,
   UpdateUserDto,
   UpdateUserPasswordDto,
 } from './dto/user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -54,5 +57,45 @@ export class UsersController {
   @Roles('lede_admin', 'lede_operator')
   remove(@Param('id') id: string) {
     return this.users.remove(id);
+  }
+
+  @Get('team/users')
+  @Roles('lede_admin')
+  listTeam() {
+    return this.users.listTeam();
+  }
+
+  @Post('team/users')
+  @Roles('lede_admin')
+  createTeamUser(@Body() dto: CreateTeamUserDto) {
+    return this.users.createTeamUser(dto);
+  }
+
+  @Patch('team/users/:id/password')
+  @Roles('lede_admin')
+  setTeamPassword(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserPasswordDto,
+  ) {
+    return this.users.setTeamPassword(id, dto);
+  }
+
+  @Patch('team/users/:id')
+  @Roles('lede_admin')
+  updateTeamUser(
+    @Param('id') id: string,
+    @Body() dto: UpdateTeamUserDto,
+    @CurrentUser() actor: { userId: string },
+  ) {
+    return this.users.updateTeamUser(id, dto, actor.userId);
+  }
+
+  @Delete('team/users/:id')
+  @Roles('lede_admin')
+  removeTeamUser(
+    @Param('id') id: string,
+    @CurrentUser() actor: { userId: string },
+  ) {
+    return this.users.removeTeamUser(id, actor.userId);
   }
 }

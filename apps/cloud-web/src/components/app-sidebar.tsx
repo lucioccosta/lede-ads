@@ -12,6 +12,7 @@ import {
   CalendarClockIcon,
   MonitorIcon,
   BarChart3Icon,
+  ShieldCheckIcon,
 } from "lucide-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -148,6 +149,17 @@ export function AppSidebar({
             { title: "Histórico", url: "/dashboard/history" },
           ],
         },
+        ...(user.role === "lede_admin"
+          ? [
+              {
+                title: "Administração",
+                url: "/dashboard/users",
+                icon: <ShieldCheckIcon />,
+                isActive: pathname.startsWith("/dashboard/users"),
+                items: [{ title: "Usuários", url: "/dashboard/users" }],
+              },
+            ]
+          : []),
       ];
 
   const shortcuts = inClientSpace

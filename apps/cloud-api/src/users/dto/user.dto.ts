@@ -44,3 +44,34 @@ export class UpdateUserDto {
   @IsBoolean()
   active?: boolean;
 }
+
+export class CreateTeamUserDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @MinLength(2)
+  name!: string;
+
+  @IsString()
+  @MinLength(6)
+  password!: string;
+
+  @IsIn(['lede_admin', 'lede_operator'])
+  role!: 'lede_admin' | 'lede_operator';
+}
+
+export class UpdateTeamUserDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  name?: string;
+
+  @IsOptional()
+  @IsIn(['lede_admin', 'lede_operator'])
+  role?: 'lede_admin' | 'lede_operator';
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
