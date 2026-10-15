@@ -12,7 +12,7 @@ import { LayoutsService } from './layouts.service';
 import { CreateLayoutDto, UpdateLayoutDto } from './dto/layout.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { isActingAsClient, requireClientId } from '../common/condo-access';
@@ -26,7 +26,7 @@ export class LayoutsController {
   ) {}
 
   @Get()
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('layouts.view')
   async findAll(
     @CurrentUser() user: {
       role: string;
@@ -55,25 +55,25 @@ export class LayoutsController {
   }
 
   @Get(':id')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('layouts.view')
   findOne(@Param('id') id: string) {
     return this.layouts.findOne(id);
   }
 
   @Post()
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('layouts.manage')
   create(@Body() dto: CreateLayoutDto) {
     return this.layouts.create(dto);
   }
 
   @Patch(':id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('layouts.manage')
   update(@Param('id') id: string, @Body() dto: UpdateLayoutDto) {
     return this.layouts.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('lede_admin')
+  @RequirePermission('layouts.delete')
   remove(@Param('id') id: string) {
     return this.layouts.remove(id);
   }

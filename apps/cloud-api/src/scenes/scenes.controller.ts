@@ -14,7 +14,7 @@ import { ScenesService } from './scenes.service';
 import { CreateSceneDto, UpdateSceneDto } from './dto/scene.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -36,7 +36,7 @@ export class ScenesController {
   ) {}
 
   @Get()
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('scenes.view')
   findAll(
     @Query('clientId') clientId: string | undefined,
     @CurrentUser() user: {
@@ -50,7 +50,7 @@ export class ScenesController {
 
   /** Cena ativa do condomínio (agenda condo de maior prioridade). */
   @Get('condo/active')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('scenes.view')
   async activeCondoScene(
     @CurrentUser() user: {
       role: string;
@@ -89,7 +89,7 @@ export class ScenesController {
   }
 
   @Get(':id')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('scenes.view')
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: { role: string; clientId: string | null },
@@ -102,13 +102,13 @@ export class ScenesController {
   }
 
   @Post()
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('scenes.create')
   create(@Body() dto: CreateSceneDto) {
     return this.scenes.create(dto);
   }
 
   @Patch(':id')
-  @Roles('lede_admin', 'lede_operator', 'client_approver')
+  @RequirePermission('scenes.edit')
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateSceneDto,
@@ -210,7 +210,7 @@ export class ScenesController {
   }
 
   @Delete(':id')
-  @Roles('lede_admin')
+  @RequirePermission('scenes.delete')
   remove(@Param('id') id: string) {
     return this.scenes.remove(id);
   }

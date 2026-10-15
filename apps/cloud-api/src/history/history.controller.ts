@@ -8,7 +8,7 @@ import {
 import { HistoryService } from './history.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   isActingAsClient,
@@ -21,7 +21,7 @@ export class HistoryController {
   constructor(private readonly history: HistoryService) {}
 
   @Get()
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('history.view')
   findAll(
     @Query('clientId') clientId: string | undefined,
     @CurrentUser() user: {

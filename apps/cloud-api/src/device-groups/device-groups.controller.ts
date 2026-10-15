@@ -15,7 +15,7 @@ import {
 } from './dto/device-group.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 
 @Controller('device-groups')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,31 +23,31 @@ export class DeviceGroupsController {
   constructor(private readonly groups: DeviceGroupsService) {}
 
   @Get()
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('device_groups.view')
   findAll() {
     return this.groups.findAll();
   }
 
   @Get(':id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('device_groups.view')
   findOne(@Param('id') id: string) {
     return this.groups.findOne(id);
   }
 
   @Post()
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('device_groups.manage')
   create(@Body() dto: CreateDeviceGroupDto) {
     return this.groups.create(dto);
   }
 
   @Patch(':id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('device_groups.manage')
   update(@Param('id') id: string, @Body() dto: UpdateDeviceGroupDto) {
     return this.groups.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('lede_admin')
+  @RequirePermission('device_groups.delete')
   remove(@Param('id') id: string) {
     return this.groups.remove(id);
   }

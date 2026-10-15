@@ -60,8 +60,9 @@ function emptyForm() {
 }
 
 export default function TeamUsersPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [currentUser] = useState(() => getStoredUser());
+  const currentUserId = currentUser?.id ?? null;
+  const isAdmin = currentUser?.role === "lede_admin";
   const [items, setItems] = useState<TeamUser[]>([]);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -80,12 +81,8 @@ export default function TeamUsersPage() {
   }
 
   useEffect(() => {
-    const user = getStoredUser();
-    setCurrentUserId(user?.id ?? null);
-    const admin = user?.role === "lede_admin";
-    setIsAdmin(admin);
-    if (admin) void load();
-  }, []);
+    if (isAdmin) void load();
+  }, [isAdmin]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -184,8 +181,6 @@ export default function TeamUsersPage() {
       toast.error(err instanceof Error ? err.message : "Erro ao remover");
     }
   }
-
-  if (isAdmin === null) return null;
 
   if (!isAdmin) {
     return (

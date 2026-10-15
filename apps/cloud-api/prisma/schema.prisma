@@ -101,6 +101,13 @@ model User {
   changeLogs ChangeLog[]
 }
 
+/** Permissões configuradas por perfil. Sem linha = padrões do código. */
+model RolePermission {
+  role        UserRole @id
+  permissions String[]
+  updatedAt   DateTime @updatedAt
+}
+
 model Plan {
   id                String    @id @default(cuid())
   clientId          String

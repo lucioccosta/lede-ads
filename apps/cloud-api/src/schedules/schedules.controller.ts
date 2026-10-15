@@ -14,7 +14,7 @@ import { SchedulesService } from './schedules.service';
 import { CreateScheduleDto, UpdateScheduleDto } from './dto/schedule.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { isClientRole } from '../common/condo-access';
 
@@ -24,7 +24,7 @@ export class SchedulesController {
   constructor(private readonly schedules: SchedulesService) {}
 
   @Get()
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('schedules.view')
   findAll(
     @Query('deviceId') deviceId: string | undefined,
     @CurrentUser() user: { role: string; clientId: string | null },
@@ -35,7 +35,7 @@ export class SchedulesController {
   }
 
   @Get(':id')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('schedules.view')
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: { role: string; clientId: string | null },
@@ -48,19 +48,19 @@ export class SchedulesController {
   }
 
   @Post()
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('schedules.manage')
   create(@Body() dto: CreateScheduleDto) {
     return this.schedules.create(dto);
   }
 
   @Patch(':id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('schedules.manage')
   update(@Param('id') id: string, @Body() dto: UpdateScheduleDto) {
     return this.schedules.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('lede_admin')
+  @RequirePermission('schedules.delete')
   remove(@Param('id') id: string) {
     return this.schedules.remove(id);
   }

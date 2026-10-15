@@ -2,7 +2,7 @@ import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
 import { IsArray, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { TickerService } from './ticker.service';
 
 class UpdateTickerConfigDto {
@@ -17,13 +17,13 @@ export class TickerController {
   constructor(private readonly ticker: TickerService) {}
 
   @Get('config')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('ticker.manage')
   getConfig() {
     return this.ticker.getConfig();
   }
 
   @Put('config')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('ticker.manage')
   setConfig(@Body() body: UpdateTickerConfigDto) {
     return this.ticker.setConfig(body.enabledKeys ?? []);
   }

@@ -19,6 +19,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller()
@@ -27,13 +28,13 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Get('clients/:clientId/users')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('client_users.manage')
   listByClient(@Param('clientId') clientId: string) {
     return this.users.listByClient(clientId);
   }
 
   @Post('clients/:clientId/users')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('client_users.manage')
   createForClient(
     @Param('clientId') clientId: string,
     @Body() dto: CreateClientUserDto,
@@ -42,19 +43,19 @@ export class UsersController {
   }
 
   @Patch('users/:id/password')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('client_users.manage')
   setPassword(@Param('id') id: string, @Body() dto: UpdateUserPasswordDto) {
     return this.users.setPassword(id, dto);
   }
 
   @Patch('users/:id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('client_users.manage')
   update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.users.update(id, dto);
   }
 
   @Delete('users/:id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('client_users.manage')
   remove(@Param('id') id: string) {
     return this.users.remove(id);
   }

@@ -18,6 +18,8 @@ export type AuthUser = {
   clientId: string | null;
   /** Presente no login quando o cliente é condomínio */
   isCondo?: boolean;
+  /** Vem de GET /auth/me; ausente logo após o login */
+  permissions?: string[];
 };
 
 function getToken() {
@@ -100,6 +102,12 @@ export function isLedeRole(role: string) {
   return role === "lede_admin" || role === "lede_operator";
 }
 
+/** A API é quem bloqueia; aqui só decide o que mostrar. */
+export function can(user: AuthUser, permission: string) {
+  if (user.role === "lede_admin" || !user.permissions) return true;
+  return user.permissions.includes(permission);
+}
+
 /** Atualiza usuário no localStorage a partir de GET /auth/me (inclui isCondo). */
 export async function refreshAuthUser(): Promise<AuthUser | null> {
   const token = getToken();
@@ -112,6 +120,7 @@ export async function refreshAuthUser(): Promise<AuthUser | null> {
       role: string;
       clientId: string | null;
       client?: { isCondo: boolean; name: string } | null;
+      permissions?: string[];
     }>("/auth/me");
     const user: AuthUser = {
       id: me.id,
@@ -120,6 +129,7 @@ export async function refreshAuthUser(): Promise<AuthUser | null> {
       role: me.role,
       clientId: me.clientId,
       isCondo: me.client?.isCondo ?? false,
+      permissions: me.permissions,
     };
     localStorage.setItem("lede_user", JSON.stringify(user));
     return user;

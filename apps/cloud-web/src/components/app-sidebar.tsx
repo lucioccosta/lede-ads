@@ -26,13 +26,33 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { AuthUser, isLedeRole } from "@/lib/api";
+import { AuthUser, can, isLedeRole } from "@/lib/api";
 import {
   getPortalContext,
   getWorkspace,
   WORKSPACE_EVENT,
   type Workspace,
 } from "@/lib/workspace";
+
+const ROUTE_PERMISSION: Record<string, string> = {
+  "/dashboard/clients": "clients.view",
+  "/dashboard/plans": "plans.view",
+  "/dashboard/device-groups": "device_groups.view",
+  "/dashboard/capacity": "capacity.view",
+  "/dashboard/screen-types": "screen_types.view",
+  "/dashboard/layouts": "layouts.view",
+  "/dashboard/media": "media.view",
+  "/dashboard/scenes": "scenes.view",
+  "/dashboard/schedules": "schedules.view",
+  "/dashboard/ticker": "ticker.manage",
+  "/dashboard/devices": "devices.view",
+  "/dashboard/reports": "reports.view",
+  "/dashboard/history": "history.view",
+  "/portal/devices": "devices.mine",
+  "/portal/media": "media.view",
+  "/portal/history": "history.view",
+  "/portal/reports": "reports.view",
+};
 
 export function AppSidebar({
   user,
@@ -155,8 +175,13 @@ export function AppSidebar({
                 title: "Administração",
                 url: "/dashboard/users",
                 icon: <ShieldCheckIcon />,
-                isActive: pathname.startsWith("/dashboard/users"),
-                items: [{ title: "Usuários", url: "/dashboard/users" }],
+                isActive:
+                  pathname.startsWith("/dashboard/users") ||
+                  pathname.startsWith("/dashboard/permissions"),
+                items: [
+                  { title: "Usuários", url: "/dashboard/users" },
+                  { title: "Permissões", url: "/dashboard/permissions" },
+                ],
               },
             ]
           : []),
@@ -213,14 +238,26 @@ export function AppSidebar({
         },
       ];
 
+  const allowed = (url: string) => {
+    const permission = ROUTE_PERMISSION[url];
+    return !permission || can(user, permission);
+  };
+  const visibleNav = navMain
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => allowed(item.url)),
+    }))
+    .filter((group) => group.items.length > 0);
+  const visibleShortcuts = shortcuts.filter((s) => allowed(s.url));
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <TeamSwitcher user={user} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navMain} />
-        <NavProjects projects={shortcuts} label="Atalhos" />
+        <NavMain items={visibleNav} />
+        <NavProjects projects={visibleShortcuts} label="Atalhos" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser

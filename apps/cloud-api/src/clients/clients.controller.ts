@@ -12,7 +12,7 @@ import { ClientsService } from './clients.service';
 import { CreateClientDto, UpdateClientDto } from './dto/client.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 
 @Controller('clients')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -20,31 +20,31 @@ export class ClientsController {
   constructor(private readonly clients: ClientsService) {}
 
   @Get()
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('clients.view')
   findAll() {
     return this.clients.findAll();
   }
 
   @Get(':id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('clients.view')
   findOne(@Param('id') id: string) {
     return this.clients.findOne(id);
   }
 
   @Post()
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('clients.manage')
   create(@Body() dto: CreateClientDto) {
     return this.clients.create(dto);
   }
 
   @Patch(':id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('clients.manage')
   update(@Param('id') id: string, @Body() dto: UpdateClientDto) {
     return this.clients.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('lede_admin')
+  @RequirePermission('clients.delete')
   remove(@Param('id') id: string) {
     return this.clients.remove(id);
   }

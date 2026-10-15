@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { ChangePasswordDto, LoginDto } from './dto/auth.dto';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -32,7 +34,7 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -44,6 +46,11 @@ export class AuthService {
         client: { select: { isCondo: true, name: true } },
       },
     });
+    if (!user) return null;
+    return {
+      ...user,
+      permissions: await this.permissions.forRole(user.role),
+    };
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {

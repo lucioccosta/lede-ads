@@ -2,7 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { MediaService } from '../media/media.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { resolveClientScope } from '../common/condo-access';
 
@@ -12,7 +12,7 @@ export class ReportsController {
   constructor(private readonly media: MediaService) {}
 
   @Get('sampling')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('reports.view')
   sampling(
     @Query('clientId') clientId: string | undefined,
     @Query('from') from: string | undefined,

@@ -19,6 +19,7 @@ import { StorageModule } from './storage/storage.module';
 import { CapacityModule } from './capacity/capacity.module';
 import { DeviceGroupsModule } from './device-groups/device-groups.module';
 import { TickerModule } from './ticker/ticker.module';
+import { PermissionsModule } from './permissions/permissions.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TickerModule } from './ticker/ticker.module';
     PrismaModule,
     StorageModule,
     AuthModule,
+    PermissionsModule,
     ClientsModule,
     UsersModule,
     CapacityModule,

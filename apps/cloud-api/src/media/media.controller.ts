@@ -17,7 +17,7 @@ import {
 } from './dto/media.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   isActingAsClient,
@@ -35,7 +35,7 @@ export class MediaController {
   ) {}
 
   @Get()
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('media.view')
   findAll(
     @Query('clientId') clientId: string | undefined,
     @CurrentUser() user: {
@@ -48,7 +48,7 @@ export class MediaController {
   }
 
   @Get(':id')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('media.view')
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: {
@@ -65,7 +65,7 @@ export class MediaController {
   }
 
   @Post()
-  @Roles('lede_admin', 'lede_operator', 'client_approver')
+  @RequirePermission('media.upload')
   async create(
     @Body() dto: CreateMediaDto,
     @CurrentUser() user: {
@@ -99,7 +99,7 @@ export class MediaController {
   }
 
   @Patch(':id')
-  @Roles('lede_admin', 'lede_operator', 'client_approver')
+  @RequirePermission('media.upload')
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateMediaDto,
@@ -118,7 +118,7 @@ export class MediaController {
   }
 
   @Post(':id/submit')
-  @Roles('lede_admin', 'lede_operator', 'client_approver')
+  @RequirePermission('media.upload')
   async submit(
     @Param('id') id: string,
     @CurrentUser() user: {
@@ -136,7 +136,7 @@ export class MediaController {
   }
 
   @Post(':id/review')
-  @Roles('lede_admin', 'lede_operator', 'client_approver')
+  @RequirePermission('media.review')
   async review(
     @Param('id') id: string,
     @Body() dto: ReviewMediaDto,

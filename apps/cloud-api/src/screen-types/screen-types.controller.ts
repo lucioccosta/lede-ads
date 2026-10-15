@@ -17,7 +17,7 @@ import {
 } from './dto/screen-type.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller()
@@ -26,37 +26,37 @@ export class ScreenTypesController {
   constructor(private readonly screenTypes: ScreenTypesService) {}
 
   @Get('screen-types')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('screen_types.view')
   findAll() {
     return this.screenTypes.findAll();
   }
 
   @Get('screen-types/:id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('screen_types.view')
   findOne(@Param('id') id: string) {
     return this.screenTypes.findOne(id);
   }
 
   @Post('screen-types')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('screen_types.manage')
   create(@Body() dto: CreateScreenTypeDto) {
     return this.screenTypes.create(dto);
   }
 
   @Patch('screen-types/:id')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('screen_types.manage')
   update(@Param('id') id: string, @Body() dto: UpdateScreenTypeDto) {
     return this.screenTypes.update(id, dto);
   }
 
   @Delete('screen-types/:id')
-  @Roles('lede_admin')
+  @RequirePermission('screen_types.delete')
   remove(@Param('id') id: string) {
     return this.screenTypes.remove(id);
   }
 
   @Get('clients/:clientId/screen-types')
-  @Roles('lede_admin', 'lede_operator', 'client_viewer', 'client_approver')
+  @RequirePermission('screen_types.view')
   listForClient(
     @Param('clientId') clientId: string,
     @CurrentUser() user: { role: string; clientId: string | null },
@@ -69,7 +69,7 @@ export class ScreenTypesController {
   }
 
   @Put('clients/:clientId/screen-types')
-  @Roles('lede_admin', 'lede_operator')
+  @RequirePermission('screen_types.manage')
   setForClient(
     @Param('clientId') clientId: string,
     @Body() dto: SetClientScreenTypesDto,

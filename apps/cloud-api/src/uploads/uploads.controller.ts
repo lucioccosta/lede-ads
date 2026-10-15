@@ -10,7 +10,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { RequirePermission } from '../auth/permission.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { isActingAsClient, requireClientId } from '../common/condo-access';
 import { StorageService } from '../storage/storage.service';
@@ -25,7 +25,7 @@ export class UploadsController {
   ) {}
 
   @Post()
-  @Roles('lede_admin', 'lede_operator', 'client_approver')
+  @RequirePermission('media.upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
