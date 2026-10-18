@@ -105,7 +105,7 @@ O Cloud consulta releases (`GITHUB_REPO`, opcional `GITHUB_TOKEN`) e compara com
 | `prod` | Sim — `lede-edge-sb3000-v….apk` |
 | `fios` / `casa` | Não — só sideload local |
 
-1. Publique `lede-edge-sb3000-v{X.Y.Z}.apk` na release.
+1. Publique `lede-edge-sb3000-v{X.Y.Z}.apk` na release (manual ou via Actions).
 2. Em **Telas**, devices desatualizados mostram **Atualização disponível**.
 3. **Atualizar** → Edge baixa no heartbeat e instala (`PackageInstaller`).
 
@@ -113,6 +113,35 @@ O Cloud consulta releases (`GITHUB_REPO`, opcional `GITHUB_TOKEN`) e compara com
 GITHUB_REPO=lucioccosta/lede-ads
 # GITHUB_TOKEN=ghp_…   # opcional
 ```
+
+### CI — GitHub Actions
+
+Workflow: [`.github/workflows/edge-sb3000-release.yml`](../.github/workflows/edge-sb3000-release.yml)
+
+**Secrets** (repo → Settings → Secrets and variables → Actions):
+
+| Secret | Obrigatório | Descrição |
+|--------|-------------|-----------|
+| `LEDE_EDGE_KEYSTORE_BASE64` | sim | `base64` do `apps/edge-android/keystore/lede-edge-sideload.jks` |
+| `LEDE_EDGE_STORE_PASSWORD` | não | default `lede-edge` |
+| `LEDE_EDGE_KEY_ALIAS` | não | default `lede-edge` |
+| `LEDE_EDGE_KEY_PASSWORD` | não | default `lede-edge` |
+
+```bash
+# Gerar o secret do keystore (macOS)
+base64 -i apps/edge-android/keystore/lede-edge-sideload.jks | pbcopy
+# Colar em LEDE_EDGE_KEYSTORE_BASE64
+```
+
+**Como publicar uma versão**
+
+1. Suba `versionCode` / `versionName` em `apps/edge-android/app/build.gradle.kts` e faça commit no `main`.
+2. Opção A — tag:
+   ```bash
+   git tag edge-sb3000-v0.5.14
+   git push origin edge-sb3000-v0.5.14
+   ```
+3. Opção B — Actions → **Edge SB3000 Release** → Run workflow (usa a versão do Gradle no commit).
 
 ## Instalação no SB3000
 

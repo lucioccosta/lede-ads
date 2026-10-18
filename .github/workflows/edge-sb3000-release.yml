@@ -1,0 +1,168 @@
+# Build + publica o APK de produção (sb3000) nas GitHub Releases (OTA).
+#
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   LEDE_EDGE_KEYSTORE_BASE64  — base64 do keystore/lede-edge-sideload.jks
+#   LEDE_EDGE_STORE_PASSWORD   — opcional (default: lede-edge)
+#   LEDE_EDGE_KEY_ALIAS        — opcional (default: lede-edge)
+#   LEDE_EDGE_KEY_PASSWORD     — opcional (default: lede-edge)
+#
+# Como gerar o base64 (local):
+#   base64 -i apps/edge-android/keystore/lede-edge-sideload.jks | pbcopy
+#
+# Disparos:
+#   1) Push de tag  edge-sb3000-vX.Y.Z  (versão da tag deve bater com versionName no Gradle)
+#   2) Actions → "Edge SB3000 Release" → Run workflow
+
+name: Edge SB3000 Release
+
+on:
+  push:
+    tags:
+      - "edge-sb3000-v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publicar GitHub Release com o APK"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: edge-sb3000-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build prod APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Read version from Gradle
+        id: ver
+        working-directory: apps/edge-android
+        run: |
+          set -euo pipefail
+          NAME=$(grep -E '^\s*versionName\s*=' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          CODE=$(grep -E '^\s*versionCode\s*=' app/build.gradle.kts | head -1 | sed -E 's/.*=\s*([0-9]+).*/\1/')
+          if [[ ! "$NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "versionName inválido: $NAME"
+            exit 1
+          fi
+          echo "version=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "apk=lede-edge-sb3000-v${NAME}.apk" >> "$GITHUB_OUTPUT"
+          echo "tag=edge-sb3000-v${NAME}" >> "$GITHUB_OUTPUT"
+          echo "Edge versionName=$NAME versionCode=$CODE"
+
+      - name: Validate tag matches Gradle (tag push)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED="${{ steps.ver.outputs.tag }}"
+          if [[ "$TAG" != "$EXPECTED" ]]; then
+            echo "Tag ($TAG) ≠ versão do Gradle ($EXPECTED)."
+            echo "Atualize versionName/versionCode em app/build.gradle.kts ou use a tag correta."
+            exit 1
+          fi
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.LEDE_EDGE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KEYSTORE_B64:-}" ]]; then
+            echo "Secret LEDE_EDGE_KEYSTORE_BASE64 não configurado."
+            exit 1
+          fi
+          mkdir -p apps/edge-android/keystore
+          echo "$KEYSTORE_B64" | base64 -d > apps/edge-android/keystore/lede-edge-sideload.jks
+          test -s apps/edge-android/keystore/lede-edge-sideload.jks
+
+      - name: Write local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > apps/edge-android/local.properties
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-edge-${{ runner.os }}-${{ hashFiles('apps/edge-android/**/*.gradle*', 'apps/edge-android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-edge-${{ runner.os }}-
+
+      - name: Build exportSb3000Apk
+        working-directory: apps/edge-android
+        env:
+          STORE_PASSWORD: ${{ secrets.LEDE_EDGE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LEDE_EDGE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LEDE_EDGE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew :app:exportSb3000Apk --no-daemon \
+            -Plede.storePassword="${STORE_PASSWORD:-lede-edge}" \
+            -Plede.keyAlias="${KEY_ALIAS:-lede-edge}" \
+            -Plede.keyPassword="${KEY_PASSWORD:-lede-edge}"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.apk }}
+          path: releases/edge/sb3000/${{ steps.ver.outputs.apk }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: >
+          startsWith(github.ref, 'refs/tags/') ||
+          (github.event_name == 'workflow_dispatch' && inputs.publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          APK="releases/edge/sb3000/${{ steps.ver.outputs.apk }}"
+          VER="${{ steps.ver.outputs.version }}"
+          NOTES="## Edge SB3000 v${VER}
+
+Build CI (GitHub Actions) — flavor \`prod\`, API \`https://api.lede.tv.br/api\`.
+
+**APK:** \`${{ steps.ver.outputs.apk }}\`
+**versionCode:** ${{ steps.ver.outputs.version_code }}
+
+OTA: em **Telas**, devices desatualizados mostram atualização disponível."
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG já existe — atualizando asset…"
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            # workflow_dispatch sem tag: cria a release (e a tag) a partir do commit atual
+            if [[ "$GITHUB_REF" != "refs/tags/$TAG" ]]; then
+              gh release create "$TAG" "$APK" \
+                --title "Edge SB3000 v${VER}" \
+                --notes "$NOTES" \
+                --target "$GITHUB_SHA"
+            else
+              gh release create "$TAG" "$APK" \
+                --title "Edge SB3000 v${VER}" \
+                --notes "$NOTES"
+            fi
+          fi
+          echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
