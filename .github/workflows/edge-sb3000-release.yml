@@ -130,9 +130,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        if: >
-          startsWith(github.ref, 'refs/tags/') ||
-          (github.event_name == 'workflow_dispatch' && inputs.publish)
+        if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -140,29 +138,31 @@ jobs:
           TAG="${{ steps.ver.outputs.tag }}"
           APK="releases/edge/sb3000/${{ steps.ver.outputs.apk }}"
           VER="${{ steps.ver.outputs.version }}"
-          NOTES="## Edge SB3000 v${VER}
+          NOTES_FILE="$(mktemp)"
+          cat > "$NOTES_FILE" <<EOF
+          ## Edge SB3000 v${VER}
 
-Build CI (GitHub Actions) — flavor \`prod\`, API \`https://api.lede.tv.br/api\`.
+          Build CI (GitHub Actions) — flavor \`prod\`, API \`https://api.lede.tv.br/api\`.
 
-**APK:** \`${{ steps.ver.outputs.apk }}\`
-**versionCode:** ${{ steps.ver.outputs.version_code }}
+          **APK:** \`${{ steps.ver.outputs.apk }}\`
+          **versionCode:** ${{ steps.ver.outputs.version_code }}
 
-OTA: em **Telas**, devices desatualizados mostram atualização disponível."
+          OTA: em **Telas**, devices desatualizados mostram atualização disponível.
+          EOF
+          # Remove indentação do heredoc acima
+          sed -i 's/^          //' "$NOTES_FILE"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG já existe — atualizando asset…"
             gh release upload "$TAG" "$APK" --clobber
+          elif [[ "$GITHUB_REF" == "refs/tags/$TAG" ]]; then
+            gh release create "$TAG" "$APK" \
+              --title "Edge SB3000 v${VER}" \
+              --notes-file "$NOTES_FILE"
           else
-            # workflow_dispatch sem tag: cria a release (e a tag) a partir do commit atual
-            if [[ "$GITHUB_REF" != "refs/tags/$TAG" ]]; then
-              gh release create "$TAG" "$APK" \
-                --title "Edge SB3000 v${VER}" \
-                --notes "$NOTES" \
-                --target "$GITHUB_SHA"
-            else
-              gh release create "$TAG" "$APK" \
-                --title "Edge SB3000 v${VER}" \
-                --notes "$NOTES"
-            fi
+            gh release create "$TAG" "$APK" \
+              --title "Edge SB3000 v${VER}" \
+              --notes-file "$NOTES_FILE" \
+              --target "$GITHUB_SHA"
           fi
           echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
