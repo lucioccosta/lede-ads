@@ -119,6 +119,9 @@ function classifyGithubAsset(
 export class EdgeReleaseService {
   private readonly logger = new Logger(EdgeReleaseService.name);
   private ghCache: { at: number; assets: EdgeReleaseAsset[] } | null = null;
+  /** Evita N fetches paralelos ao listar Telas (thundering herd → 403 rate limit). */
+  private ghInFlight: Promise<EdgeReleaseAsset[]> | null = null;
+  private lastWarnAt = 0;
   private readonly ttlMs = 5 * 60 * 1000;
 
   private repo() {
@@ -224,16 +227,27 @@ export class EdgeReleaseService {
     if (!force && this.ghCache && now - this.ghCache.at < this.ttlMs) {
       return this.ghCache.assets;
     }
-    try {
-      const assets = await this.fetchFromGithub();
-      this.ghCache = { at: now, assets };
-      return assets;
-    } catch (err) {
-      this.logger.warn(
-        `GitHub releases: ${err instanceof Error ? err.message : err}`,
-      );
-      return this.ghCache?.assets ?? [];
-    }
+    if (this.ghInFlight) return this.ghInFlight;
+
+    this.ghInFlight = (async () => {
+      try {
+        const assets = await this.fetchFromGithub();
+        this.ghCache = { at: Date.now(), assets };
+        return assets;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Evita spam no log a cada heartbeat/lista de Telas
+        if (Date.now() - this.lastWarnAt > 60_000) {
+          this.lastWarnAt = Date.now();
+          this.logger.warn(`GitHub releases: ${msg}`);
+        }
+        return this.ghCache?.assets ?? [];
+      } finally {
+        this.ghInFlight = null;
+      }
+    })();
+
+    return this.ghInFlight;
   }
 
   private async fetchFromGithub(): Promise<EdgeReleaseAsset[]> {
@@ -252,6 +266,19 @@ export class EdgeReleaseService {
       signal: AbortSignal.timeout(12_000),
     });
     if (!res.ok) {
+      const remaining = res.headers.get('x-ratelimit-remaining');
+      const reset = res.headers.get('x-ratelimit-reset');
+      const resetAt = reset
+        ? new Date(Number(reset) * 1000).toISOString()
+        : '?';
+      if (res.status === 403 || res.status === 429) {
+        throw new Error(
+          `GitHub HTTP ${res.status} (rate limit; remaining=${remaining ?? '?'}, reset=${resetAt}). ` +
+            (token
+              ? 'Verifique se GITHUB_TOKEN tem leitura de contents no repo.'
+              : 'Defina GITHUB_TOKEN no ambiente da API (PAT com contents:read).'),
+        );
+      }
       throw new Error(`GitHub HTTP ${res.status}`);
     }
     const releases = (await res.json()) as GhRelease[];
@@ -272,7 +299,8 @@ export class EdgeReleaseService {
       }
     }
     this.logger.log(
-      `GitHub releases: ${out.length} APK(s) sb3000 (produção) em ${repo}`,
+      `GitHub releases: ${out.length} APK(s) sb3000 (produção) em ${repo}` +
+        (token ? '' : ' [sem GITHUB_TOKEN — limite 60 req/h]'),
     );
     return out;
   }

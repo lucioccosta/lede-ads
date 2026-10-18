@@ -138,23 +138,31 @@ export class DevicesService {
     appVersionCode?: number | null;
     appFlavor?: string | null;
   }>(devices: T[]) {
-    const enriched = await Promise.all(
-      devices.map(async (d) => {
-        const latest = await this.releases.resolveForFlavor(d.appFlavor);
-        const updateAvailable = this.releases.needsUpdate({
-          appVersion: d.appVersion,
-          appVersionCode: d.appVersionCode,
-          latest,
-        });
-        return {
-          ...d,
-          updateAvailable,
-          latestEdgeVersion: latest?.versionName ?? null,
-          latestEdgeAsset: latest?.assetName ?? null,
-        };
-      }),
+    const flavors = [...new Set(devices.map((d) => d.appFlavor ?? 'prod'))];
+    const latestByFlavor = new Map(
+      await Promise.all(
+        flavors.map(
+          async (flavor) =>
+            [flavor, await this.releases.resolveForFlavor(flavor)] as const,
+        ),
+      ),
     );
-    return enriched;
+
+    return devices.map((d) => {
+      const flavor = d.appFlavor ?? 'prod';
+      const latest = latestByFlavor.get(flavor) ?? null;
+      const updateAvailable = this.releases.needsUpdate({
+        appVersion: d.appVersion,
+        appVersionCode: d.appVersionCode,
+        latest,
+      });
+      return {
+        ...d,
+        updateAvailable,
+        latestEdgeVersion: latest?.versionName ?? null,
+        latestEdgeAsset: latest?.assetName ?? null,
+      };
+    });
   }
 
   async findOne(id: string) {

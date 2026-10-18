@@ -111,8 +111,11 @@ O Cloud consulta releases (`GITHUB_REPO`, opcional `GITHUB_TOKEN`) e compara com
 
 ```bash
 GITHUB_REPO=lucioccosta/lede-ads
-# GITHUB_TOKEN=ghp_…   # opcional
+# Obrigatório em produção — sem token o GitHub limita a ~60 req/h por IP (HTTP 403)
+GITHUB_TOKEN=ghp_…   # ou fine-grained PAT com Contents: Read no repo
 ```
+
+Sem `GITHUB_TOKEN`, a API loga `GitHub HTTP 403` e o OTA em Telas fica sem a versão mais recente até o rate limit liberar.
 
 ### CI — GitHub Actions
 
