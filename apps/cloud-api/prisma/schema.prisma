@@ -49,6 +49,7 @@ enum DeviceCommandType {
 
 enum DeviceCommandStatus {
   pending
+  running
   done
   failed
 }

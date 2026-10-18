@@ -356,12 +356,18 @@ export class DevicesService {
           `Device já está em ${device.appVersion || '?'} (latest ${latest.versionName})`,
         );
       }
-      // Proxy pela API: boxes TV costumam falhar no download direto do GitHub.
-      const flavor = encodeURIComponent(device.appFlavor || 'prod');
-      const ver = encodeURIComponent(latest.versionName);
-      const proxyUrl = `${publicBaseUrl()}/api/edge/ota/apk?v=${ver}&flavor=${flavor}`;
+      // Cache local + URL /uploads/… (mesmo caminho estável das mídias).
+      // Proxy /api/edge/ota/apk fica de fallback.
+      let apkUrl: string;
+      try {
+        apkUrl = await this.releases.ensureCachedApk(latest);
+      } catch {
+        const flavor = encodeURIComponent(device.appFlavor || 'prod');
+        const ver = encodeURIComponent(latest.versionName);
+        apkUrl = `${publicBaseUrl()}/api/edge/ota/apk?v=${ver}&flavor=${flavor}`;
+      }
       payloadJson = {
-        apkUrl: proxyUrl,
+        apkUrl,
         sourceUrl: latest.apkUrl,
         versionName: latest.versionName,
         assetName: latest.assetName,
@@ -370,12 +376,14 @@ export class DevicesService {
       };
     }
 
-    // Evita acumular reboot/update pending (causa loop se o ACK não chega antes do reboot).
+    // Evita acumular reboot/update pending/running (loop se o ACK atrasa).
     if (dto.type === 'reboot' || dto.type === 'update') {
       await this.prisma.deviceCommand.updateMany({
         where: {
           deviceId: id,
-          status: DeviceCommandStatus.pending,
+          status: {
+            in: [DeviceCommandStatus.pending, DeviceCommandStatus.running],
+          },
           type: dto.type as DeviceCommandType,
         },
         data: {

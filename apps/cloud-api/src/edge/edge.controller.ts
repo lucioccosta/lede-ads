@@ -18,8 +18,6 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Request, Response } from 'express';
-import { Readable } from 'stream';
-import { pipeline } from 'stream/promises';
 import { EdgeService } from './edge.service';
 import {
   AckCommandDto,
@@ -123,41 +121,14 @@ export class EdgeController {
       return res.redirect(302, latest.apkUrl);
     }
 
-    const headers: Record<string, string> = {
-      Accept: 'application/octet-stream',
-      'User-Agent': 'LEDE-Ads-Edge-OTA',
-    };
-    const ghToken = process.env.GITHUB_TOKEN?.trim();
-    if (ghToken) headers.Authorization = `Bearer ${ghToken}`;
-
-    const upstream = await fetch(latest.apkUrl, {
-      headers,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(180_000),
-    });
-    if (!upstream.ok || !upstream.body) {
+    try {
+      const cachedUrl = await this.releases.ensureCachedApk(latest);
+      return res.redirect(302, cachedUrl);
+    } catch {
       throw new BadGatewayException(
-        `Falha ao obter APK no GitHub (HTTP ${upstream.status})`,
+        'Falha ao obter APK (cache OTA / GitHub)',
       );
     }
-
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.android.package-archive',
-    );
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${latest.assetName}"`,
-    );
-    const len = upstream.headers.get('content-length');
-    if (len) res.setHeader('Content-Length', len);
-
-    await pipeline(
-      Readable.fromWeb(
-        upstream.body as import('stream/web').ReadableStream,
-      ),
-      res,
-    );
   }
 
   @Post('proof-of-play')

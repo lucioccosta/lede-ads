@@ -81,6 +81,10 @@ class PlayerActivity : AppCompatActivity() {
     private var rePairWindowStart = 0L
     private var rePairing = false
 
+    /** Evita N OTAs em paralelo se o Cloud reenviar o comando. */
+    @Volatile
+    private var otaInProgress = false
+
     private val tickerArrowAnims = mutableListOf<ObjectAnimator>()
     private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var tickerAllItems: List<TickerItem> = emptyList()
@@ -390,38 +394,51 @@ class PlayerActivity : AppCompatActivity() {
                     runCatching { api.ackCommand(token, command.id, "done") }
                     return
                 }
-                Toast.makeText(
-                    this,
-                    "Atualizando Edge ${targetVersion.ifBlank { "" }}…",
-                    Toast.LENGTH_LONG,
-                ).show()
+                if (otaInProgress) {
+                    Log.w(TAG, "OTA já em andamento — ignora comando ${command.id}")
+                    return
+                }
+                otaInProgress = true
+                try {
+                    Toast.makeText(
+                        this,
+                        "Baixando update ${targetVersion.ifBlank { "" }}…",
+                        Toast.LENGTH_LONG,
+                    ).show()
 
-                // Libera lock task para o diálogo de instalação (sem Device Owner).
-                runCatching { stopLockTask() }
-                if (!ApkUpdateInstaller.canInstallPackages(this)) {
-                    ApkUpdateInstaller.requestInstallPermission(this)
-                    runCatching {
-                        api.ackCommand(
-                            token,
-                            command.id,
-                            "failed",
-                            "Permita instalar apps desconhecidos e reenvie o update",
-                        )
+                    // Libera lock task para o instalador do sistema (sem Device Owner).
+                    runCatching { stopLockTask() }
+                    if (!ApkUpdateInstaller.canInstallPackages(this)) {
+                        ApkUpdateInstaller.requestInstallPermission(this)
+                        runCatching {
+                            api.ackCommand(
+                                token,
+                                command.id,
+                                "failed",
+                                "Permita instalar apps desconhecidos e reenvie o update",
+                            )
+                        }
+                        return
                     }
-                    return
-                }
 
-                val result = ApkUpdateInstaller.downloadAndInstall(this, url, token)
-                if (result.isFailure) {
-                    val err = result.exceptionOrNull()?.message ?: "OTA falhou"
-                    Log.e(TAG, "OTA falhou: $err", result.exceptionOrNull())
-                    runCatching { api.ackCommand(token, command.id, "failed", err) }
-                    // Volta ao kiosk se o download/install não engatou.
-                    if (!escapingKiosk) runCatching { startLockTask() }
-                    return
+                    val result = ApkUpdateInstaller.downloadAndInstall(this, url, token)
+                    if (result.isFailure) {
+                        val err = result.exceptionOrNull()?.message ?: "OTA falhou"
+                        Log.e(TAG, "OTA falhou: $err", result.exceptionOrNull())
+                        runCatching { api.ackCommand(token, command.id, "failed", err) }
+                        if (!escapingKiosk) runCatching { startLockTask() }
+                        return
+                    }
+                    Toast.makeText(
+                        this,
+                        "Confirme a instalação no box…",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    // Download/session OK. ACK done — o processo pode morrer no replace.
+                    runCatching { api.ackCommand(token, command.id, "done") }
+                } finally {
+                    otaInProgress = false
                 }
-                // Download + session commit OK. ACK done — o processo pode morrer no replace.
-                runCatching { api.ackCommand(token, command.id, "done") }
             }
             else -> {
                 runCatching {

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.lede.edge.ui.RootActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,12 +19,10 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Baixa APK e instala via PackageInstaller.
+ * Baixa APK e instala via PackageInstaller (Device Owner) ou Intent (confirmação).
  *
- * OTA 100% silenciosa (sem diálogos) exige Device Owner:
- *   adb shell dpm set-device-owner com.lede.edge.fios/com.lede.edge.LedeDeviceAdminReceiver
- *
- * Sem Device Owner o Android força confirmação ("fontes desconhecidas" / Instalar).
+ * OTA 100% silenciosa exige Device Owner:
+ *   adb shell dpm set-device-owner com.lede.edge/.LedeDeviceAdminReceiver
  */
 object ApkUpdateInstaller {
     private const val TAG = "ApkUpdateInstaller"
@@ -45,7 +44,6 @@ object ApkUpdateInstaller {
         }
     }
 
-    /** Abre a tela de permissão "instalar apps desconhecidos" (se necessário). */
     fun requestInstallPermission(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         if (canInstallPackages(context)) return
@@ -68,7 +66,13 @@ object ApkUpdateInstaller {
                     error("Sem permissão REQUEST_INSTALL_PACKAGES (fontes desconhecidas)")
                 }
                 val apk = download(context, apkUrl, deviceToken)
-                installSession(context, apk)
+                if (KioskPolicy.isDeviceOwner(context)) {
+                    installSession(context, apk)
+                } else {
+                    // Android 10 TV: PackageInstaller sem DO exige UI que o kiosk engole.
+                    // Intent + FileProvider costuma abrir o instalador do sistema.
+                    installViaIntent(context, apk)
+                }
                 Unit
             }
         }
@@ -98,8 +102,25 @@ object ApkUpdateInstaller {
         if (!out.exists() || out.length() < 1024) {
             error("APK inválido após download")
         }
-        Log.i(TAG, "APK baixado: ${out.length()} bytes")
+        Log.i(TAG, "APK baixado: ${out.length()} bytes de $apkUrl")
         return out
+    }
+
+    private fun installViaIntent(context: Context, apk: File) {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            apk,
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        context.startActivity(intent)
+        Log.i(TAG, "Install via Intent (confirmação do sistema)")
     }
 
     private fun installSession(context: Context, apk: File) {
@@ -142,7 +163,6 @@ class ApkInstallReceiver : BroadcastReceiver() {
         val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                // Sem Device Owner o Android exige confirmação — abre o diálogo do sistema.
                 val confirm = if (Build.VERSION.SDK_INT >= 33) {
                     intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                 } else {
@@ -162,8 +182,6 @@ class ApkInstallReceiver : BroadcastReceiver() {
             }
             PackageInstaller.STATUS_SUCCESS -> {
                 Log.i("ApkInstallReceiver", "Update instalado com sucesso")
-                // MY_PACKAGE_REPLACED também dispara BootReceiver; isto cobre o caso
-                // em que o processo sobrevive ao replace (self-update).
                 runCatching {
                     val launch = Intent(context, RootActivity::class.java).apply {
                         addFlags(

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-mkdir -p /app/apps/cloud-api/uploads
+mkdir -p /app/apps/cloud-api/uploads /app/apps/cloud-api/uploads/edge-ota
 
 echo "[lede-api] aplicando migrations..."
 npx prisma migrate deploy --schema=prisma/schema.prisma

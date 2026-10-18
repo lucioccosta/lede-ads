@@ -145,6 +145,7 @@ const commandLabel: Record<string, string> = {
 
 const statusLabel: Record<string, string> = {
   pending: "Pendente",
+  running: "Em andamento",
   done: "Concluído",
   failed: "Falhou",
 };
@@ -479,10 +480,13 @@ export default function DevicesPage() {
           : type === "screenshot"
             ? "Screenshot solicitado"
             : type === "update"
-              ? "Atualização enfileirada — o Edge baixa no próximo heartbeat"
+              ? "Atualização enfileirada — aguarde o próximo heartbeat (~30s) e confira o Histórico"
               : "Reboot enfileirado",
       );
-      if (historyDevice?.id === deviceId) {
+      const device = items.find((d) => d.id === deviceId);
+      if (type === "update" && device) {
+        await openHistory(device);
+      } else if (historyDevice?.id === deviceId) {
         await openHistory(historyDevice);
       }
       await load();

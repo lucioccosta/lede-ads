@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   DeviceCommandStatus,
+  DeviceCommandType,
   DeviceStatus,
   MediaStatus,
   ScheduleChannel,
@@ -639,24 +640,43 @@ export class EdgeService {
       select: { id: true, type: true, payloadJson: true, createdAt: true },
     });
 
-    // Expire reboot/update pending há >10 min (proteção contra loop pós-falha de ACK).
+    // Expire reboot/update pending/running há >10 min (proteção contra loop).
     const staleCutoff = Date.now() - 10 * 60 * 1000;
-    const stale = commands.filter(
-      (c) =>
-        (c.type === 'reboot' || c.type === 'update') &&
-        c.createdAt.getTime() < staleCutoff,
-    );
-    if (stale.length > 0) {
-      await this.prisma.deviceCommand.updateMany({
-        where: { id: { in: stale.map((c) => c.id) } },
-        data: {
-          status: DeviceCommandStatus.failed,
-          error: 'Expirado (proteção contra loop)',
-          ackedAt: new Date(),
+    await this.prisma.deviceCommand.updateMany({
+      where: {
+        deviceId: device.id,
+        type: { in: [DeviceCommandType.update, DeviceCommandType.reboot] },
+        status: {
+          in: [DeviceCommandStatus.pending, DeviceCommandStatus.running],
         },
+        createdAt: { lt: new Date(staleCutoff) },
+      },
+      data: {
+        status: DeviceCommandStatus.failed,
+        error: 'Expirado (proteção contra loop)',
+        ackedAt: new Date(),
+      },
+    });
+
+    const fresh = commands.filter(
+      (c) =>
+        !(
+          (c.type === 'reboot' || c.type === 'update') &&
+          c.createdAt.getTime() < staleCutoff
+        ),
+    );
+
+    // update: marca running na entrega — evita reenviar a cada heartbeat
+    // enquanto o Edge baixa ~20MB (senão inicia N downloads em paralelo).
+    const updateIds = fresh
+      .filter((c) => c.type === 'update')
+      .map((c) => c.id);
+    if (updateIds.length > 0) {
+      await this.prisma.deviceCommand.updateMany({
+        where: { id: { in: updateIds } },
+        data: { status: DeviceCommandStatus.running },
       });
     }
-    const fresh = commands.filter((c) => !stale.some((s) => s.id === c.id));
 
     // Re-lê timezone atual (pode ter sido alterado no Cloud)
     const freshDevice = await this.prisma.device.findUnique({

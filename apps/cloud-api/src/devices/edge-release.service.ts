@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { existsSync, readdirSync, statSync } from 'fs';
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+} from 'fs';
 import { join } from 'path';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
 import { publicBaseUrl } from '../common/public-url';
 
 /**
@@ -171,6 +179,74 @@ export class EdgeReleaseService {
     const latest = parseVersionCore(opts.latest.versionName);
     if (!current || !latest) return false;
     return compareVersionCore(latest, current) > 0;
+  }
+
+  /** Pasta pública servida em /uploads/edge-ota/ (mesmo host que mídia). */
+  private otaCacheDir() {
+    return join(process.cwd(), 'uploads', 'edge-ota');
+  }
+
+  otaCachePath(assetName: string) {
+    return join(this.otaCacheDir(), assetName);
+  }
+
+  otaPublicUrl(assetName: string) {
+    return `${publicBaseUrl()}/uploads/edge-ota/${encodeURIComponent(assetName)}`;
+  }
+
+  /**
+   * Garante APK em disco local (uploads/edge-ota).
+   * O Edge baixa desse URL estático — evita stream GitHub↔box (timeout/proxy).
+   */
+  async ensureCachedApk(latest: EdgeReleaseAsset): Promise<string> {
+    if (latest.source === 'local') {
+      return latest.apkUrl;
+    }
+
+    const dir = this.otaCacheDir();
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const dest = this.otaCachePath(latest.assetName);
+    const minBytes = Math.max(1024, Math.floor((latest.sizeBytes || 0) * 0.9));
+    if (existsSync(dest) && statSync(dest).size >= Math.max(1024, minBytes || 1024)) {
+      return this.otaPublicUrl(latest.assetName);
+    }
+
+    const headers: Record<string, string> = {
+      Accept: 'application/octet-stream',
+      'User-Agent': 'LEDE-Ads-Edge-OTA-Cache',
+    };
+    const ghToken = process.env.GITHUB_TOKEN?.trim();
+    if (ghToken) headers.Authorization = `Bearer ${ghToken}`;
+
+    this.logger.log(`Cacheando OTA ${latest.assetName}…`);
+    const upstream = await fetch(latest.apkUrl, {
+      headers,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(180_000),
+    });
+    if (!upstream.ok || !upstream.body) {
+      throw new Error(
+        `Falha ao baixar APK do GitHub (HTTP ${upstream.status})`,
+      );
+    }
+
+    const tmp = `${dest}.part`;
+    await pipeline(
+      Readable.fromWeb(
+        upstream.body as import('stream/web').ReadableStream,
+      ),
+      createWriteStream(tmp),
+    );
+    const { renameSync, unlinkSync } = await import('fs');
+    if (existsSync(dest)) unlinkSync(dest);
+    renameSync(tmp, dest);
+    const size = statSync(dest).size;
+    if (size < 1024) {
+      unlinkSync(dest);
+      throw new Error('APK cacheado inválido (muito pequeno)');
+    }
+    this.logger.log(`OTA em cache: ${latest.assetName} (${size} bytes)`);
+    return this.otaPublicUrl(latest.assetName);
   }
 
   private scanAllLocal(): EdgeReleaseAsset[] {
