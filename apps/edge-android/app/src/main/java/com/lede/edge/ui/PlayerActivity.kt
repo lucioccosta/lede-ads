@@ -395,17 +395,33 @@ class PlayerActivity : AppCompatActivity() {
                     "Atualizando Edge ${targetVersion.ifBlank { "" }}…",
                     Toast.LENGTH_LONG,
                 ).show()
-                // ACK antes do PackageInstaller — o processo pode morrer / o box pode reiniciar.
-                runCatching { api.ackCommand(token, command.id, "done") }
-                kotlinx.coroutines.delay(400)
-                val result = ApkUpdateInstaller.downloadAndInstall(this, url)
-                if (result.isFailure) {
-                    Log.e(
-                        TAG,
-                        "OTA falhou: ${result.exceptionOrNull()?.message}",
-                        result.exceptionOrNull(),
-                    )
+
+                // Libera lock task para o diálogo de instalação (sem Device Owner).
+                runCatching { stopLockTask() }
+                if (!ApkUpdateInstaller.canInstallPackages(this)) {
+                    ApkUpdateInstaller.requestInstallPermission(this)
+                    runCatching {
+                        api.ackCommand(
+                            token,
+                            command.id,
+                            "failed",
+                            "Permita instalar apps desconhecidos e reenvie o update",
+                        )
+                    }
+                    return
                 }
+
+                val result = ApkUpdateInstaller.downloadAndInstall(this, url, token)
+                if (result.isFailure) {
+                    val err = result.exceptionOrNull()?.message ?: "OTA falhou"
+                    Log.e(TAG, "OTA falhou: $err", result.exceptionOrNull())
+                    runCatching { api.ackCommand(token, command.id, "failed", err) }
+                    // Volta ao kiosk se o download/install não engatou.
+                    if (!escapingKiosk) runCatching { startLockTask() }
+                    return
+                }
+                // Download + session commit OK. ACK done — o processo pode morrer no replace.
+                runCatching { api.ackCommand(token, command.id, "done") }
             }
             else -> {
                 runCatching {

@@ -106,6 +106,10 @@ export class EdgeService {
     };
   }
 
+  async requireDeviceByToken(token: string) {
+    return this.byToken(token);
+  }
+
   private async byToken(token: string) {
     const device = await this.prisma.device.findUnique({
       where: { deviceToken: token },

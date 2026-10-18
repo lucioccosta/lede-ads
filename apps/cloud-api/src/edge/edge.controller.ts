@@ -1,19 +1,25 @@
 import {
+  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
   Get,
   Headers,
+  NotFoundException,
   Param,
   Post,
+  Query,
   Req,
+  Res,
   UnauthorizedException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { EdgeService } from './edge.service';
 import {
   AckCommandDto,
@@ -23,6 +29,10 @@ import {
   ScreenshotDto,
 } from './dto/edge.dto';
 import { StorageService } from '../storage/storage.service';
+import {
+  EdgeReleaseService,
+  parseVersionCore,
+} from '../devices/edge-release.service';
 
 function clientIp(req: Request): string | undefined {
   const xf = req.headers['x-forwarded-for'];
@@ -40,6 +50,7 @@ export class EdgeController {
   constructor(
     private readonly edge: EdgeService,
     private readonly storage: StorageService,
+    private readonly releases: EdgeReleaseService,
   ) {}
 
   @Post('pair')
@@ -77,6 +88,76 @@ export class EdgeController {
   ) {
     if (!token) throw new UnauthorizedException('Device token obrigatório');
     return this.edge.ackCommand(token, id, dto);
+  }
+
+  /**
+   * Proxy do APK de OTA (GitHub ou pasta local).
+   * Token opcional: Edge ≤0.5.13 não envia header — flavor vem da query.
+   * O APK já é público no GitHub; o proxy só evita SSL/redirect nos boxes.
+   */
+  @Get('ota/apk')
+  async otaApk(
+    @Headers('x-device-token') token: string | undefined,
+    @Query('v') version: string | undefined,
+    @Query('flavor') flavorQuery: string | undefined,
+    @Res() res: Response,
+  ) {
+    let flavor = flavorQuery?.trim() || 'prod';
+    if (token) {
+      const device = await this.edge.requireDeviceByToken(token);
+      flavor = device.appFlavor || flavor;
+    }
+    const latest = await this.releases.resolveForFlavor(flavor);
+    if (!latest) {
+      throw new NotFoundException('Nenhum APK Edge disponível para este flavor');
+    }
+    const want = parseVersionCore(version);
+    const have = parseVersionCore(latest.versionName);
+    if (want && have && want !== have) {
+      throw new NotFoundException(
+        `APK v${want} não é o latest (atual ${have})`,
+      );
+    }
+
+    if (latest.source === 'local') {
+      return res.redirect(302, latest.apkUrl);
+    }
+
+    const headers: Record<string, string> = {
+      Accept: 'application/octet-stream',
+      'User-Agent': 'LEDE-Ads-Edge-OTA',
+    };
+    const ghToken = process.env.GITHUB_TOKEN?.trim();
+    if (ghToken) headers.Authorization = `Bearer ${ghToken}`;
+
+    const upstream = await fetch(latest.apkUrl, {
+      headers,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(180_000),
+    });
+    if (!upstream.ok || !upstream.body) {
+      throw new BadGatewayException(
+        `Falha ao obter APK no GitHub (HTTP ${upstream.status})`,
+      );
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.android.package-archive',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${latest.assetName}"`,
+    );
+    const len = upstream.headers.get('content-length');
+    if (len) res.setHeader('Content-Length', len);
+
+    await pipeline(
+      Readable.fromWeb(
+        upstream.body as import('stream/web').ReadableStream,
+      ),
+      res,
+    );
   }
 
   @Post('proof-of-play')

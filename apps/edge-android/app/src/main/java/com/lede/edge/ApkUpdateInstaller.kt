@@ -5,7 +5,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import com.lede.edge.ui.RootActivity
 import kotlinx.coroutines.Dispatchers
@@ -35,22 +37,56 @@ object ApkUpdateInstaller {
         .followSslRedirects(true)
         .build()
 
-    suspend fun downloadAndInstall(context: Context, apkUrl: String): Result<Unit> =
+    fun canInstallPackages(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.packageManager.canRequestPackageInstalls()
+        } else {
+            true
+        }
+    }
+
+    /** Abre a tela de permissão "instalar apps desconhecidos" (se necessário). */
+    fun requestInstallPermission(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (canInstallPackages(context)) return
+        val intent = Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:${context.packageName}"),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+            .onFailure { Log.w(TAG, "Não abriu permissão de install: ${it.message}") }
+    }
+
+    suspend fun downloadAndInstall(
+        context: Context,
+        apkUrl: String,
+        deviceToken: String? = null,
+    ): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val apk = download(context, apkUrl)
+                if (!canInstallPackages(context)) {
+                    error("Sem permissão REQUEST_INSTALL_PACKAGES (fontes desconhecidas)")
+                }
+                val apk = download(context, apkUrl, deviceToken)
                 installSession(context, apk)
                 Unit
             }
         }
 
-    private fun download(context: Context, apkUrl: String): File {
+    private fun download(
+        context: Context,
+        apkUrl: String,
+        deviceToken: String?,
+    ): File {
         val dir = File(context.cacheDir, "ota").apply { mkdirs() }
         val out = File(dir, "update.apk")
         if (out.exists()) out.delete()
 
-        val req = Request.Builder().url(apkUrl).get().build()
-        http.newCall(req).execute().use { res ->
+        val reqBuilder = Request.Builder().url(apkUrl).get()
+        if (!deviceToken.isNullOrBlank()) {
+            reqBuilder.header("x-device-token", deviceToken)
+        }
+        http.newCall(reqBuilder.build()).execute().use { res ->
             if (!res.isSuccessful) {
                 error("Download APK falhou HTTP ${res.code}")
             }
@@ -73,7 +109,9 @@ object ApkUpdateInstaller {
         )
         params.setAppPackageName(context.packageName)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            params.setRequireUserAction(
+                PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED,
+            )
         }
 
         val sessionId = installer.createSession(params)
@@ -113,7 +151,13 @@ class ApkInstallReceiver : BroadcastReceiver() {
                 }
                 if (confirm != null) {
                     confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(confirm)
+                    runCatching { context.startActivity(confirm) }
+                        .onFailure {
+                            Log.e(
+                                "ApkInstallReceiver",
+                                "Falha ao abrir diálogo de install: ${it.message}",
+                            )
+                        }
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {

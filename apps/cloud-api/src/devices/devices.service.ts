@@ -21,6 +21,7 @@ import {
   UpdateDeviceDto,
 } from './dto/device.dto';
 import { EdgeReleaseService } from './edge-release.service';
+import { publicBaseUrl } from '../common/public-url';
 
 const OFFLINE_MS = 2 * 60 * 1000;
 
@@ -355,8 +356,13 @@ export class DevicesService {
           `Device já está em ${device.appVersion || '?'} (latest ${latest.versionName})`,
         );
       }
+      // Proxy pela API: boxes TV costumam falhar no download direto do GitHub.
+      const flavor = encodeURIComponent(device.appFlavor || 'prod');
+      const ver = encodeURIComponent(latest.versionName);
+      const proxyUrl = `${publicBaseUrl()}/api/edge/ota/apk?v=${ver}&flavor=${flavor}`;
       payloadJson = {
-        apkUrl: latest.apkUrl,
+        apkUrl: proxyUrl,
+        sourceUrl: latest.apkUrl,
         versionName: latest.versionName,
         assetName: latest.assetName,
         releaseTag: latest.tagName,
