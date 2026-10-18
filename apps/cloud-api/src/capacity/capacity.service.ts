@@ -24,7 +24,7 @@ export type GroupCapacity = {
   plans: Array<{
     id: string;
     name: string;
-    clientId: string;
+    clientId: string | null;
     clientName: string;
     samplesPerDay: number;
     months: number;
@@ -117,7 +117,7 @@ export class CapacityService {
         id: p.id,
         name: p.name,
         clientId: p.clientId,
-        clientName: p.client.name,
+        clientName: p.client?.name ?? 'Sem anunciante',
         samplesPerDay: p.samplesPerDay,
         months: p.months,
         startsAt: p.startsAt.toISOString(),

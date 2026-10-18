@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
@@ -133,6 +134,24 @@ export class MediaController {
       if (item.clientId !== user.clientId) throw new ForbiddenException();
     }
     return this.media.submit(id);
+  }
+
+  @Delete(':id')
+  @RequirePermission('media.delete')
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: {
+      role: string;
+      clientId: string | null;
+      actingAsClient?: boolean;
+    },
+  ) {
+    const item = await this.media.findOne(id);
+    if (isActingAsClient(user)) {
+      requireClientId(user);
+      if (item.clientId !== user.clientId) throw new ForbiddenException();
+    }
+    return this.media.remove(id);
   }
 
   @Post(':id/review')

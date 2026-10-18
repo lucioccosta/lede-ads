@@ -11,7 +11,7 @@ export class ScenesService {
       where: clientId ? { clientId } : undefined,
       include: {
         layout: true,
-        client: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true, isCondo: true } },
         zones: { include: { media: true } },
       },
       orderBy: { createdAt: 'desc' },

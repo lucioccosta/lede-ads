@@ -29,7 +29,9 @@ import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -77,7 +79,7 @@ type Scene = {
   active: boolean
   clientId: string
   layoutId: string
-  client: { name: string }
+  client: { name: string; isCondo?: boolean }
   layout: { name: string; zonesJson?: LayoutZone[] }
   zones?: SceneZone[]
 }
@@ -95,6 +97,15 @@ export default function ScenesPage() {
   const [name, setName] = useState("")
   const [durationSec, setDurationSec] = useState("10")
   const [search, setSearch] = useState("")
+
+  const condoClients = useMemo(
+    () => clients.filter((c) => c.isCondo),
+    [clients],
+  )
+  const adsClients = useMemo(
+    () => clients.filter((c) => !c.isCondo),
+    [clients],
+  )
 
   async function load() {
     const [scenes, clientList, layoutList, mediaList] = await Promise.all([
@@ -123,16 +134,33 @@ export default function ScenesPage() {
     [media, clientId],
   )
 
+  function sceneIsCondo(s: Scene) {
+    return (
+      s.client.isCondo ??
+      !!clients.find((c) => c.id === s.clientId)?.isCondo
+    )
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return items
-    return items.filter(
-      (s) =>
+    return items.filter((s) => {
+      if (!q) return true
+      return (
         s.name.toLowerCase().includes(q) ||
         s.client.name.toLowerCase().includes(q) ||
-        s.layout.name.toLowerCase().includes(q),
-    )
+        s.layout.name.toLowerCase().includes(q)
+      )
+    })
   }, [items, search])
+
+  const condoScenes = useMemo(
+    () => filtered.filter((s) => sceneIsCondo(s)),
+    [filtered, clients],
+  )
+  const adsScenes = useMemo(
+    () => filtered.filter((s) => !sceneIsCondo(s)),
+    [filtered, clients],
+  )
 
   const selectedClient = clients.find((c) => c.id === clientId)
   const isCondoClient = Boolean(selectedClient?.isCondo)
@@ -153,7 +181,7 @@ export default function ScenesPage() {
   }
 
   function openCreate() {
-    const firstClient = clients[0]
+    const firstClient = adsClients[0] ?? condoClients[0] ?? clients[0]
     const firstLayout = layouts[0]
     const editable = zonesForClient(
       firstLayout?.zonesJson ?? [],
@@ -321,17 +349,37 @@ export default function ScenesPage() {
                 <Select
                   value={clientId}
                   onValueChange={(v) => onClientChange(v ?? "")}
-                  items={Object.fromEntries(clients.map((c) => [c.id, c.name]))}
+                  items={Object.fromEntries(
+                    clients.map((c) => [
+                      c.id,
+                      c.isCondo ? `${c.name} (Condomínio)` : `${c.name} (ADS)`,
+                    ]),
+                  )}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
+                    {condoClients.length > 0 ? (
+                      <SelectGroup>
+                        <SelectLabel>Condomínios</SelectLabel>
+                        {condoClients.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ) : null}
+                    {adsClients.length > 0 ? (
+                      <SelectGroup>
+                        <SelectLabel>Anunciantes ADS</SelectLabel>
+                        {adsClients.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ) : null}
                   </SelectContent>
                 </Select>
               </div>
@@ -458,84 +506,114 @@ export default function ScenesPage() {
           actionLabel="Nova cena"
           onAction={openCreate}
         />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="Nenhum resultado"
+          description="Tente outro termo de busca."
+          actionLabel="Limpar busca"
+          onAction={() => setSearch("")}
+        />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Lista ({filtered.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {filtered.length === 0 ? (
-              <EmptyState
-                title="Nenhum resultado"
-                description="Tente outro termo de busca."
-                actionLabel="Limpar busca"
-                onAction={() => setSearch("")}
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Layout</TableHead>
-                    <TableHead>Zonas</TableHead>
-                    <TableHead>Duração</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell>{s.client.name}</TableCell>
-                      <TableCell>{s.layout.name}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {(s.zones ?? []).map((z) => (
-                            <Badge key={z.zoneKey} variant="secondary">
-                              {z.zoneKey}
-                              {z.media?.name ? `: ${z.media.name}` : ""}
+        <div className="space-y-6">
+          {(
+            [
+              {
+                key: "condo",
+                title: "Condomínios",
+                rows: condoScenes,
+                empty: "Nenhuma cena de condomínio",
+              },
+              {
+                key: "ads",
+                title: "Anunciantes ADS",
+                rows: adsScenes,
+                empty: "Nenhuma cena de anunciante ADS",
+              },
+            ] as const
+          ).map((section) => (
+            <Card key={section.key}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  {section.title}
+                  <Badge variant="secondary">{section.rows.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {section.rows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {section.empty}
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Layout</TableHead>
+                        <TableHead>Zonas</TableHead>
+                        <TableHead>Duração</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {section.rows.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">
+                            {s.name}
+                          </TableCell>
+                          <TableCell>{s.client.name}</TableCell>
+                          <TableCell>{s.layout.name}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {(s.zones ?? []).map((z) => (
+                                <Badge key={z.zoneKey} variant="secondary">
+                                  {z.zoneKey}
+                                  {z.media?.name ? `: ${z.media.name}` : ""}
+                                </Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>{s.durationMs / 1000}s</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={s.active ? "default" : "secondary"}
+                            >
+                              {s.active ? "Ativa" : "Inativa"}
                             </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>{s.durationMs / 1000}s</TableCell>
-                      <TableCell>
-                        <Badge variant={s.active ? "default" : "secondary"}>
-                          {s.active ? "Ativa" : "Inativa"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="space-x-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEdit(s)}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void toggleActive(s)}
-                        >
-                          {s.active ? "Desativar" : "Ativar"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => void removeScene(s)}
-                        >
-                          Remover
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                          </TableCell>
+                          <TableCell className="space-x-2 text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEdit(s)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void toggleActive(s)}
+                            >
+                              {s.active ? "Desativar" : "Ativar"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => void removeScene(s)}
+                            >
+                              Remover
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   )

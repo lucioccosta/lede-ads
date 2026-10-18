@@ -122,6 +122,32 @@ export default function ScreenTypesPage() {
     }
   }
 
+  async function removeType(item: ScreenType) {
+    const layouts = item._count?.layouts ?? 0;
+    const devices = item._count?.devices ?? 0;
+    if (layouts > 0 || devices > 0) {
+      const parts: string[] = [];
+      if (layouts > 0) parts.push(`${layouts} layout(s)`);
+      if (devices > 0) parts.push(`${devices} tela(s)`);
+      toast.error(
+        `Tipo em uso por ${parts.join(" e ")}. Remova ou troque o vínculo antes.`,
+      );
+      return;
+    }
+    const ok = window.confirm(
+      `Remover o tipo "${item.name}"? Esta ação não pode ser desfeita.`,
+    );
+    if (!ok) return;
+    try {
+      await api(`/screen-types/${item.id}`, { method: "DELETE" });
+      toast.success("Tipo removido");
+      if (editing?.id === item.id) setOpen(false);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao remover");
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -251,39 +277,57 @@ export default function ScreenTypesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((t) => (
-                    <TableRow key={t.id}>
-                      <TableCell className="font-medium">{t.name}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {t.slug}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            t.mode === "condo_split" ? "default" : "secondary"
-                          }
-                        >
-                          {t.mode === "condo_split"
-                            ? "Condo + Ads"
-                            : "Padrão"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {t._count?.layouts ?? 0} layouts ·{" "}
-                        {t._count?.devices ?? 0} telas ·{" "}
-                        {t._count?.clients ?? 0} clientes
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEdit(t)}
-                        >
-                          Editar
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {filtered.map((t) => {
+                    const inUse =
+                      (t._count?.layouts ?? 0) > 0 ||
+                      (t._count?.devices ?? 0) > 0;
+                    return (
+                      <TableRow key={t.id}>
+                        <TableCell className="font-medium">{t.name}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {t.slug}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              t.mode === "condo_split" ? "default" : "secondary"
+                            }
+                          >
+                            {t.mode === "condo_split"
+                              ? "Condo + Ads"
+                              : "Padrão"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {t._count?.layouts ?? 0} layouts ·{" "}
+                          {t._count?.devices ?? 0} telas ·{" "}
+                          {t._count?.clients ?? 0} clientes
+                        </TableCell>
+                        <TableCell className="space-x-2 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEdit(t)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={inUse}
+                            title={
+                              inUse
+                                ? "Em uso por layouts ou telas — não pode remover"
+                                : "Remover tipo de tela"
+                            }
+                            onClick={() => void removeType(t)}
+                          >
+                            Remover
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}

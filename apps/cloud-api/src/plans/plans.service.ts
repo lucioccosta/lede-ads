@@ -58,7 +58,7 @@ export class PlansService {
 
     return this.prisma.plan.create({
       data: {
-        clientId: dto.clientId,
+        clientId: dto.clientId ?? null,
         name: dto.name,
         samplesPerDay: dto.samplesPerDay,
         sampleDurationSec: dto.sampleDurationSec ?? 10,
@@ -114,6 +114,7 @@ export class PlansService {
     return this.prisma.plan.update({
       where: { id },
       data: {
+        ...(dto.clientId !== undefined ? { clientId: dto.clientId } : {}),
         name: dto.name,
         samplesPerDay: dto.samplesPerDay,
         sampleDurationSec: dto.sampleDurationSec,

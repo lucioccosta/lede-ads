@@ -6,12 +6,15 @@ import {
   IsOptional,
   IsString,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreatePlanDto {
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
   @IsString()
-  clientId!: string;
+  clientId?: string | null;
 
   @IsString()
   name!: string;
@@ -47,6 +50,11 @@ export class CreatePlanDto {
 }
 
 export class UpdatePlanDto {
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  clientId?: string | null;
+
   @IsOptional()
   @IsString()
   name?: string;

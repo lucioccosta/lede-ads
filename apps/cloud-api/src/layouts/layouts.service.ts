@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLayoutDto, UpdateLayoutDto } from './dto/layout.dto';
@@ -20,25 +24,29 @@ function normalizeZones(zones: ZoneInput[]) {
   }));
 }
 
+const layoutInclude = {
+  screenTypeRef: {
+    select: { id: true, name: true, mode: true, slug: true },
+  },
+  _count: { select: { scenes: true } },
+} as const;
+
 @Injectable()
 export class LayoutsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll() {
+  findAll(where?: Prisma.LayoutWhereInput) {
     return this.prisma.layout.findMany({
+      where,
       orderBy: { name: 'asc' },
-      include: {
-        screenTypeRef: { select: { id: true, name: true, mode: true, slug: true } },
-      },
+      include: layoutInclude,
     });
   }
 
   async findOne(id: string) {
     const layout = await this.prisma.layout.findUnique({
       where: { id },
-      include: {
-        screenTypeRef: { select: { id: true, name: true, mode: true, slug: true } },
-      },
+      include: layoutInclude,
     });
     if (!layout) throw new NotFoundException('Layout não encontrado');
     return layout;
@@ -62,9 +70,7 @@ export class LayoutsService {
         height: dto.height,
         zonesJson: normalizeZones(dto.zones) as unknown as Prisma.InputJsonValue,
       },
-      include: {
-        screenTypeRef: { select: { id: true, name: true, mode: true, slug: true } },
-      },
+      include: layoutInclude,
     });
   }
 
@@ -91,14 +97,17 @@ export class LayoutsService {
           ? (normalizeZones(dto.zones) as unknown as Prisma.InputJsonValue)
           : undefined,
       },
-      include: {
-        screenTypeRef: { select: { id: true, name: true, mode: true, slug: true } },
-      },
+      include: layoutInclude,
     });
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const layout = await this.findOne(id);
+    if (layout._count.scenes > 0) {
+      throw new BadRequestException(
+        `Layout em uso por ${layout._count.scenes} cena(s). Remova ou troque o layout das cenas antes.`,
+      );
+    }
     return this.prisma.layout.delete({ where: { id } });
   }
 }

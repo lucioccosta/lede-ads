@@ -32,7 +32,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -40,7 +42,7 @@ import { toast } from "sonner"
 
 type Client = { id: string; name: string; isCondo?: boolean }
 type Scene = { id: string; name: string; clientId: string }
-type Plan = { id: string; name: string; clientId: string }
+type Plan = { id: string; name: string; clientId: string | null }
 type Device = { id: string; name: string }
 type DeviceGroup = { id: string; name: string }
 type ScheduleChannel = "full" | "condo" | "ads"
@@ -61,6 +63,7 @@ type Schedule = {
   scene: { name: string }
   device: { name: string } | null
   group?: { id: string; name: string } | null
+  client?: { id: string; name: string; isCondo?: boolean } | null
 }
 
 const WEEKDAYS = [
@@ -94,6 +97,15 @@ export default function SchedulesPage() {
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
   const [channel, setChannel] = useState<ScheduleChannel>("full")
   const [search, setSearch] = useState("")
+
+  const condoClients = useMemo(
+    () => clients.filter((c) => c.isCondo),
+    [clients],
+  )
+  const adsClients = useMemo(
+    () => clients.filter((c) => !c.isCondo),
+    [clients],
+  )
 
   const selectedClient = useMemo(
     () => clients.find((c) => c.id === clientId) ?? null,
@@ -154,7 +166,7 @@ export default function SchedulesPage() {
   function openCreate() {
     setEditing(null)
     setName("")
-    const firstClient = clients[0]
+    const firstClient = adsClients[0] ?? condoClients[0] ?? clients[0]
     const firstClientId = firstClient?.id ?? ""
     setClientId(firstClientId)
     const firstScene =
@@ -300,19 +312,41 @@ export default function SchedulesPage() {
   }
 
   const clientScenes = scenes.filter((s) => s.clientId === clientId)
-  const clientPlans = plans.filter((p) => p.clientId === clientId)
+  // Planos do anunciante + catálogo ainda sem vínculo
+  const clientPlans = plans.filter(
+    (p) => !p.clientId || p.clientId === clientId,
+  )
+
+  function scheduleIsCondo(s: Schedule) {
+    const fromApi = s.client?.isCondo
+    if (fromApi !== undefined) return fromApi
+    const fromList = clients.find((c) => c.id === s.clientId)?.isCondo
+    if (fromList !== undefined) return fromList
+    return s.channel === "condo"
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return items
-    return items.filter(
-      (s) =>
+    return items.filter((s) => {
+      if (!q) return true
+      return (
         s.name.toLowerCase().includes(q) ||
         s.scene.name.toLowerCase().includes(q) ||
+        (s.client?.name ?? "").toLowerCase().includes(q) ||
         (s.device?.name ?? "todas").toLowerCase().includes(q) ||
-        (s.group?.name ?? "").toLowerCase().includes(q),
-    )
+        (s.group?.name ?? "").toLowerCase().includes(q)
+      )
+    })
   }, [items, search])
+
+  const condoSchedules = useMemo(
+    () => filtered.filter((s) => scheduleIsCondo(s)),
+    [filtered, clients],
+  )
+  const adsSchedules = useMemo(
+    () => filtered.filter((s) => !scheduleIsCondo(s)),
+    [filtered, clients],
+  )
 
   return (
     <div className="space-y-6 py-2">
@@ -325,12 +359,6 @@ export default function SchedulesPage() {
         </div>
         <Button onClick={openCreate}>Novo agendamento</Button>
       </div>
-
-      <ListToolbar
-        search={search}
-        onSearchChange={setSearch}
-        placeholder="Buscar agendamento, cena ou tela…"
-      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
@@ -355,17 +383,37 @@ export default function SchedulesPage() {
                 <Select
                   value={clientId}
                   onValueChange={(v) => onClientChange(v ?? "")}
-                  items={Object.fromEntries(clients.map((c) => [c.id, c.name]))}
+                  items={Object.fromEntries(
+                    clients.map((c) => [
+                      c.id,
+                      c.isCondo ? `${c.name} (Condomínio)` : `${c.name} (ADS)`,
+                    ]),
+                  )}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
+                    {condoClients.length > 0 ? (
+                      <SelectGroup>
+                        <SelectLabel>Condomínios</SelectLabel>
+                        {condoClients.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ) : null}
+                    {adsClients.length > 0 ? (
+                      <SelectGroup>
+                        <SelectLabel>Anunciantes ADS</SelectLabel>
+                        {adsClients.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ) : null}
                   </SelectContent>
                 </Select>
               </div>
@@ -450,7 +498,10 @@ export default function SchedulesPage() {
                   items={{
                     none: "Nenhum",
                     ...Object.fromEntries(
-                      clientPlans.map((p) => [p.id, p.name]),
+                      clientPlans.map((p) => [
+                        p.id,
+                        p.clientId ? p.name : `${p.name} (catálogo)`,
+                      ]),
                     ),
                   }}
                 >
@@ -461,7 +512,7 @@ export default function SchedulesPage() {
                     <SelectItem value="none">Nenhum</SelectItem>
                     {clientPlans.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name}
+                        {p.clientId ? p.name : `${p.name} (catálogo)`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -600,6 +651,12 @@ export default function SchedulesPage() {
         </DialogContent>
       </Dialog>
 
+      <ListToolbar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="Buscar agendamento, cena ou tela…"
+      />
+
       {items.length === 0 ? (
         <EmptyState
           title="Nenhum agendamento"
@@ -607,91 +664,121 @@ export default function SchedulesPage() {
           actionLabel="Novo agendamento"
           onAction={openCreate}
         />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="Nenhum resultado"
+          description="Tente outro termo de busca."
+          actionLabel="Limpar busca"
+          onAction={() => setSearch("")}
+        />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Grade ({filtered.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {filtered.length === 0 ? (
-              <EmptyState
-                title="Nenhum resultado"
-                description="Tente outro termo de busca."
-                actionLabel="Limpar busca"
-                onAction={() => setSearch("")}
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Canal</TableHead>
-                    <TableHead>Cena</TableHead>
-                    <TableHead>Tela / Grupo</TableHead>
-                    <TableHead>Horário</TableHead>
-                    <TableHead>Prioridade</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {s.channel === "condo"
-                            ? "Condo"
-                            : s.channel === "ads"
-                              ? "Ads"
-                              : "Full"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{s.scene.name}</TableCell>
-                      <TableCell>
-                        {s.group?.name
-                          ? `Grupo: ${s.group.name}`
-                          : (s.device?.name ?? "Todas")}
-                      </TableCell>
-                      <TableCell>
-                        {s.startTime}–{s.endTime}
-                      </TableCell>
-                      <TableCell>{s.priority}</TableCell>
-                      <TableCell>
-                        <Badge variant={s.active ? "default" : "secondary"}>
-                          {s.active ? "Ativo" : "Inativo"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="space-x-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEdit(s)}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void toggleActive(s)}
-                        >
-                          {s.active ? "Desativar" : "Ativar"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => void removeSchedule(s)}
-                        >
-                          Remover
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          {(
+            [
+              {
+                key: "condo",
+                title: "Condomínios",
+                rows: condoSchedules,
+                empty: "Nenhum agendamento de condomínio",
+              },
+              {
+                key: "ads",
+                title: "Anunciantes ADS",
+                rows: adsSchedules,
+                empty: "Nenhum agendamento de anunciante ADS",
+              },
+            ] as const
+          ).map((section) => (
+            <Card key={section.key}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  {section.title}
+                  <Badge variant="secondary">{section.rows.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {section.rows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {section.empty}
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Canal</TableHead>
+                        <TableHead>Cena</TableHead>
+                        <TableHead>Tela / Grupo</TableHead>
+                        <TableHead>Horário</TableHead>
+                        <TableHead>Prioridade</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {section.rows.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">
+                            {s.name}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {s.channel === "condo"
+                                ? "Condo"
+                                : s.channel === "ads"
+                                  ? "Ads"
+                                  : "Full"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{s.scene.name}</TableCell>
+                          <TableCell>
+                            {s.group?.name
+                              ? `Grupo: ${s.group.name}`
+                              : (s.device?.name ?? "Todas")}
+                          </TableCell>
+                          <TableCell>
+                            {s.startTime}–{s.endTime}
+                          </TableCell>
+                          <TableCell>{s.priority}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={s.active ? "default" : "secondary"}
+                            >
+                              {s.active ? "Ativo" : "Inativo"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="space-x-2 text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEdit(s)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void toggleActive(s)}
+                            >
+                              {s.active ? "Desativar" : "Ativar"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => void removeSchedule(s)}
+                            >
+                              Remover
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   )

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -11,6 +12,10 @@ import {
   UpdateScreenTypeDto,
 } from './dto/screen-type.dto';
 
+const screenTypeCountInclude = {
+  _count: { select: { layouts: true, devices: true, clients: true } },
+} as const;
+
 @Injectable()
 export class ScreenTypesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -18,9 +23,7 @@ export class ScreenTypesService {
   findAll() {
     return this.prisma.screenType.findMany({
       orderBy: { name: 'asc' },
-      include: {
-        _count: { select: { layouts: true, devices: true, clients: true } },
-      },
+      include: screenTypeCountInclude,
     });
   }
 
@@ -29,7 +32,7 @@ export class ScreenTypesService {
       where: { id },
       include: {
         layouts: { select: { id: true, name: true } },
-        _count: { select: { devices: true, clients: true } },
+        ...screenTypeCountInclude,
       },
     });
     if (!item) throw new NotFoundException('Tipo de tela não encontrado');
@@ -80,7 +83,17 @@ export class ScreenTypesService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const item = await this.findOne(id);
+    const { layouts, devices } = item._count;
+    if (layouts > 0 || devices > 0) {
+      const parts: string[] = [];
+      if (layouts > 0) parts.push(`${layouts} layout(s)`);
+      if (devices > 0) parts.push(`${devices} tela(s)`);
+      throw new BadRequestException(
+        `Tipo em uso por ${parts.join(' e ')}. Remova ou troque o vínculo antes.`,
+      );
+    }
+    // ClientScreenType tem onDelete Cascade — vínculos de cliente são limpos.
     return this.prisma.screenType.delete({ where: { id } });
   }
 

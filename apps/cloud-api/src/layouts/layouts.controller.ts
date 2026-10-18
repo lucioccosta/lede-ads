@@ -41,15 +41,7 @@ export class LayoutsController {
         select: { screenTypeId: true },
       });
       const ids = allowed.map((a) => a.screenTypeId);
-      return this.prisma.layout.findMany({
-        where: { screenTypeId: { in: ids } },
-        orderBy: { name: 'asc' },
-        include: {
-          screenTypeRef: {
-            select: { id: true, name: true, mode: true, slug: true },
-          },
-        },
-      });
+      return this.layouts.findAll({ screenTypeId: { in: ids } });
     }
     return this.layouts.findAll();
   }

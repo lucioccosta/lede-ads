@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { MediaStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -14,7 +18,10 @@ export class MediaService {
   findAll(clientId?: string) {
     return this.prisma.media.findMany({
       where: clientId ? { clientId } : undefined,
-      include: { client: { select: { id: true, name: true } } },
+      include: {
+        client: { select: { id: true, name: true, isCondo: true } },
+        _count: { select: { sceneZones: true, proofs: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -22,7 +29,10 @@ export class MediaService {
   async findOne(id: string) {
     const media = await this.prisma.media.findUnique({
       where: { id },
-      include: { client: true },
+      include: {
+        client: true,
+        _count: { select: { sceneZones: true, proofs: true } },
+      },
     });
     if (!media) throw new NotFoundException('Mídia não encontrada');
     return media;
@@ -68,6 +78,23 @@ export class MediaService {
         rejectionNote: dto.approved ? null : dto.note,
       },
     });
+  }
+
+  async remove(id: string) {
+    const media = await this.findOne(id);
+    if (media._count.proofs > 0) {
+      throw new BadRequestException(
+        `Mídia com ${media._count.proofs} prova(s) de exibição não pode ser removida`,
+      );
+    }
+    // Desvincula de cenas antes de apagar
+    if (media._count.sceneZones > 0) {
+      await this.prisma.sceneZone.updateMany({
+        where: { mediaId: id },
+        data: { mediaId: null },
+      });
+    }
+    return this.prisma.media.delete({ where: { id } });
   }
 
   async samplingReport(clientId?: string, from?: string, to?: string) {

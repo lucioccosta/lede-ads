@@ -53,7 +53,7 @@ export class SchedulesService {
         plan: true,
         device: true,
         group: { select: { id: true, name: true } },
-        client: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true, isCondo: true } },
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
@@ -73,8 +73,36 @@ export class SchedulesService {
     return schedule;
   }
 
+  /**
+   * Se a agenda aponta a um plano sem anunciante, atribui o cliente da agenda.
+   * Se o plano já tem outro anunciante, rejeita.
+   */
+  private async bindPlanToClient(
+    planId: string | null | undefined,
+    clientId: string,
+  ) {
+    if (!planId) return;
+    const plan = await this.prisma.plan.findUnique({
+      where: { id: planId },
+      select: { id: true, clientId: true, name: true },
+    });
+    if (!plan) throw new NotFoundException('Plano não encontrado');
+    if (plan.clientId && plan.clientId !== clientId) {
+      throw new BadRequestException(
+        `Plano "${plan.name}" já está vinculado a outro anunciante`,
+      );
+    }
+    if (!plan.clientId) {
+      await this.prisma.plan.update({
+        where: { id: plan.id },
+        data: { clientId },
+      });
+    }
+  }
+
   async create(dto: CreateScheduleDto) {
     await this.assertChannelForClient(dto.clientId, dto.channel);
+    await this.bindPlanToClient(dto.planId, dto.clientId);
     return this.prisma.schedule.create({
       data: {
         name: dto.name,
@@ -99,6 +127,9 @@ export class SchedulesService {
     if (dto.channel !== undefined) {
       await this.assertChannelForClient(current.clientId, dto.channel);
     }
+    const nextPlanId =
+      dto.planId === undefined ? current.planId : dto.planId;
+    await this.bindPlanToClient(nextPlanId, current.clientId);
     return this.prisma.schedule.update({
       where: { id },
       data: {

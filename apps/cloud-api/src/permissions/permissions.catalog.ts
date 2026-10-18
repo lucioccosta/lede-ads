@@ -202,6 +202,13 @@ export const PERMISSIONS: PermissionDef[] = [
     clientAssignable: true,
     defaults: EDITORS,
   },
+  {
+    key: 'media.delete',
+    label: 'Excluir mídias',
+    group: 'Mídias',
+    clientAssignable: true,
+    defaults: EDITORS,
+  },
 
   {
     key: 'scenes.view',

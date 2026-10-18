@@ -53,8 +53,8 @@ type Plan = {
   startsAt: string
   endsAt: string | null
   active: boolean
-  clientId: string
-  client: { name: string }
+  clientId: string | null
+  client: { id: string; name: string } | null
   deviceGroups?: Array<{
     deviceGroupId: string
     deviceGroup: { id: string; name: string }
@@ -68,7 +68,7 @@ export default function PlansPage() {
   const [search, setSearch] = useState("")
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Plan | null>(null)
-  const [clientId, setClientId] = useState("")
+  const [clientId, setClientId] = useState("none")
   const [name, setName] = useState("")
   const [samplesPerDay, setSamplesPerDay] = useState("100")
   const [sampleDurationSec, setSampleDurationSec] = useState("10")
@@ -105,7 +105,7 @@ export default function PlansPage() {
 
   function openCreate() {
     setEditing(null)
-    setClientId(clients[0]?.id ?? "")
+    setClientId("none")
     setName("")
     setSamplesPerDay("100")
     setSampleDurationSec("10")
@@ -117,7 +117,7 @@ export default function PlansPage() {
 
   function openEdit(plan: Plan) {
     setEditing(plan)
-    setClientId(plan.clientId)
+    setClientId(plan.clientId ?? "none")
     setName(plan.name)
     setSamplesPerDay(String(plan.samplesPerDay))
     setSampleDurationSec(String(plan.sampleDurationSec))
@@ -139,6 +139,7 @@ export default function PlansPage() {
       toast.error("Selecione ao menos um grupo de telas")
       return
     }
+    const resolvedClientId = clientId === "none" ? null : clientId
     const payload = {
       name,
       samplesPerDay: Number(samplesPerDay),
@@ -146,6 +147,7 @@ export default function PlansPage() {
       months: Number(months),
       startsAt: new Date(startsAt).toISOString(),
       groupIds,
+      clientId: resolvedClientId,
     }
     try {
       if (editing) {
@@ -157,7 +159,7 @@ export default function PlansPage() {
       } else {
         await api("/plans", {
           method: "POST",
-          body: JSON.stringify({ ...payload, clientId }),
+          body: JSON.stringify(payload),
         })
         toast.success("Plano criado")
       }
@@ -169,12 +171,22 @@ export default function PlansPage() {
   }
 
   async function toggleActive(plan: Plan) {
-    await api(`/plans/${plan.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ active: !plan.active }),
-    })
-    toast.success(plan.active ? "Plano desativado" : "Plano ativado")
-    await load()
+    if (plan.active) {
+      const ok = window.confirm(
+        `Desativar o plano "${plan.name}"? Ele deixa de ser usado em novas agendas.`,
+      )
+      if (!ok) return
+    }
+    try {
+      await api(`/plans/${plan.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: !plan.active }),
+      })
+      toast.success(plan.active ? "Plano desativado" : "Plano ativado")
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao atualizar status")
+    }
   }
 
   const filtered = useMemo(() => {
@@ -183,7 +195,7 @@ export default function PlansPage() {
     return items.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
-        p.client.name.toLowerCase().includes(q),
+        (p.client?.name ?? "sem anunciante").toLowerCase().includes(q),
     )
   }, [items, search])
 
@@ -193,7 +205,8 @@ export default function PlansPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Planos</h2>
           <p className="text-muted-foreground">
-            Produto: 10s × amostragens/dia × meses, por grupo de telas
+            Catálogo: 10s × amostragens/dia × meses. Vincule o anunciante na
+            edição ou ao criar a agenda.
           </p>
         </div>
         <Button onClick={openCreate}>Novo plano</Button>
@@ -213,18 +226,22 @@ export default function PlansPage() {
             </DialogTitle>
           </DialogHeader>
           <form className="space-y-4" onSubmit={onSubmit}>
-            {!editing && (
+            {editing ? (
               <div className="space-y-2">
-                <Label>Cliente anunciante</Label>
+                <Label>Anunciante (opcional)</Label>
                 <Select
-                  value={clientId || "none"}
-                  onValueChange={(v) => setClientId(v === "none" ? "" : (v ?? ""))}
-                  items={Object.fromEntries(clients.map((c) => [c.id, c.name]))}
+                  value={clientId}
+                  onValueChange={(v) => setClientId(v ?? "none")}
+                  items={{
+                    none: "Sem anunciante",
+                    ...Object.fromEntries(clients.map((c) => [c.id, c.name])),
+                  }}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Selecione" />
+                    <SelectValue placeholder="Sem anunciante" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Sem anunciante</SelectItem>
                     {clients.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}
@@ -232,8 +249,11 @@ export default function PlansPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Também pode vincular ao criar um agendamento ads.
+                </p>
               </div>
-            )}
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="name">Nome</Label>
               <Input
@@ -346,7 +366,7 @@ export default function PlansPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>
-                  <TableHead>Cliente</TableHead>
+                  <TableHead>Anunciante</TableHead>
                   <TableHead>Produto</TableHead>
                   <TableHead>Grupos</TableHead>
                   <TableHead>Vigência</TableHead>
@@ -358,7 +378,13 @@ export default function PlansPage() {
                 {filtered.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell>{p.client.name}</TableCell>
+                    <TableCell>
+                      {p.client?.name ?? (
+                        <span className="text-muted-foreground">
+                          Sem anunciante
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {p.sampleDurationSec}s × {p.samplesPerDay}/dia ×{" "}
                       {p.months ?? 1}m
@@ -393,7 +419,7 @@ export default function PlansPage() {
                       </Button>
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant={p.active ? "destructive" : "outline"}
                         onClick={() => void toggleActive(p)}
                       >
                         {p.active ? "Desativar" : "Ativar"}

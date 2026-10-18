@@ -67,6 +67,7 @@ type Layout = {
   width: number
   height: number
   zonesJson: Zone[]
+  _count?: { scenes: number }
 }
 
 const ZONE_PALETTE = [
@@ -741,6 +742,28 @@ export default function LayoutsPage() {
     }
   }
 
+  async function removeLayout(layout: Layout) {
+    const scenes = layout._count?.scenes ?? 0
+    if (scenes > 0) {
+      toast.error(
+        `Layout em uso por ${scenes} cena(s). Troque o layout das cenas antes.`,
+      )
+      return
+    }
+    const ok = window.confirm(
+      `Remover o layout "${layout.name}"? Esta ação não pode ser desfeita.`,
+    )
+    if (!ok) return
+    try {
+      await api(`/layouts/${layout.id}`, { method: "DELETE" })
+      toast.success("Layout removido")
+      if (editing?.id === layout.id) setOpen(false)
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao remover")
+    }
+  }
+
   return (
     <div className="space-y-6 py-2">
       <div className="flex items-center justify-between">
@@ -1073,41 +1096,63 @@ export default function LayoutsPage() {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Resolução</TableHead>
                     <TableHead>Zonas</TableHead>
+                    <TableHead>Uso</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="font-medium">{l.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {l.screenTypeRef?.name ?? l.screenType}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {l.width}×{l.height}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {(l.zonesJson ?? []).map((z) => (
-                            <Badge key={z.key} variant="secondary">
-                              {z.label}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEdit(l)}
-                        >
-                          Editar
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {filtered.map((l) => {
+                    const sceneCount = l._count?.scenes ?? 0
+                    return (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-medium">{l.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {l.screenTypeRef?.name ?? l.screenType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {l.width}×{l.height}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {(l.zonesJson ?? []).map((z) => (
+                              <Badge key={z.key} variant="secondary">
+                                {z.label}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {sceneCount === 0
+                            ? "Livre"
+                            : `${sceneCount} cena${sceneCount === 1 ? "" : "s"}`}
+                        </TableCell>
+                        <TableCell className="space-x-2 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEdit(l)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={sceneCount > 0}
+                            title={
+                              sceneCount > 0
+                                ? "Em uso por cenas — não pode remover"
+                                : "Remover layout"
+                            }
+                            onClick={() => void removeLayout(l)}
+                          >
+                            Remover
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             )}

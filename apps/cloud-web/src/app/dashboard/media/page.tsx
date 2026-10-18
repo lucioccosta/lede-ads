@@ -29,7 +29,9 @@ import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -38,7 +40,7 @@ import { ListToolbar } from "@/components/list-toolbar"
 import { toast } from "sonner"
 import { EyeIcon, ImageIcon, VideoIcon } from "lucide-react"
 
-type Client = { id: string; name: string }
+type Client = { id: string; name: string; isCondo?: boolean }
 type Media = {
   id: string
   name: string
@@ -46,7 +48,9 @@ type Media = {
   status: string
   durationMs: number
   url: string
-  client: { name: string }
+  clientId?: string
+  client: { id?: string; name: string; isCondo?: boolean }
+  _count?: { sceneZones: number; proofs: number }
 }
 
 const statusLabel: Record<string, string> = {
@@ -114,10 +118,22 @@ export default function MediaPage() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [clientFilter, setClientFilter] = useState("all")
+
+  const condoClients = useMemo(
+    () => clients.filter((c) => c.isCondo),
+    [clients],
+  )
+  const adsClients = useMemo(
+    () => clients.filter((c) => !c.isCondo),
+    [clients],
+  )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return items.filter((m) => {
+      const mediaClientId = m.clientId ?? m.client.id
+      if (clientFilter !== "all" && mediaClientId !== clientFilter) return false
       if (statusFilter !== "all" && m.status !== statusFilter) return false
       if (!q) return true
       return (
@@ -125,7 +141,7 @@ export default function MediaPage() {
         m.client.name.toLowerCase().includes(q)
       )
     })
-  }, [items, search, statusFilter])
+  }, [items, search, statusFilter, clientFilter])
 
   const localPreviewUrl = useMemo(() => {
     if (file) return URL.createObjectURL(file)
@@ -233,6 +249,31 @@ export default function MediaPage() {
     })
     toast.success("Mídia aprovada")
     await load()
+  }
+
+  async function removeMedia(media: Media) {
+    const proofs = media._count?.proofs ?? 0
+    if (proofs > 0) {
+      toast.error(
+        `Mídia com ${proofs} prova(s) de exibição não pode ser removida`,
+      )
+      return
+    }
+    const zones = media._count?.sceneZones ?? 0
+    const ok = window.confirm(
+      zones > 0
+        ? `Remover “${media.name}”? Ela será desvinculada de ${zones} zona(s) de cena.`
+        : `Remover o criativo “${media.name}”? Esta ação não pode ser desfeita.`,
+    )
+    if (!ok) return
+    try {
+      await api(`/media/${media.id}`, { method: "DELETE" })
+      toast.success("Mídia removida")
+      if (preview?.id === media.id) setPreview(null)
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao remover")
+    }
   }
 
   return (
@@ -380,8 +421,48 @@ export default function MediaPage() {
       <ListToolbar
         search={search}
         onSearchChange={setSearch}
-        placeholder="Buscar mídia ou cliente…"
+        placeholder="Buscar mídia…"
       >
+        <Select
+          value={clientFilter}
+          onValueChange={(v) => setClientFilter(v ?? "all")}
+          items={{
+            all: "Todos os clientes",
+            ...Object.fromEntries(
+              clients.map((c) => [
+                c.id,
+                c.isCondo ? `${c.name} (Condomínio)` : `${c.name} (ADS)`,
+              ]),
+            ),
+          }}
+        >
+          <SelectTrigger className="w-[220px]">
+            <SelectValue placeholder="Cliente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os clientes</SelectItem>
+            {condoClients.length > 0 ? (
+              <SelectGroup>
+                <SelectLabel>Condomínios</SelectLabel>
+                {condoClients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ) : null}
+            {adsClients.length > 0 ? (
+              <SelectGroup>
+                <SelectLabel>Anunciantes ADS</SelectLabel>
+                {adsClients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ) : null}
+          </SelectContent>
+        </Select>
         <Select
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v ?? "all")}
@@ -423,11 +504,12 @@ export default function MediaPage() {
             {filtered.length === 0 ? (
               <EmptyState
                 title="Nenhum resultado"
-                description="Ajuste a busca ou o filtro de status."
+                description="Ajuste a busca ou os filtros."
                 actionLabel="Limpar filtros"
                 onAction={() => {
                   setSearch("")
                   setStatusFilter("all")
+                  setClientFilter("all")
                 }}
               />
             ) : (
@@ -444,68 +526,87 @@ export default function MediaPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell>
-                        <button
-                          type="button"
-                          className="relative block size-14 overflow-hidden rounded-md border bg-muted"
-                          onClick={() => setPreview(m)}
-                          title="Pré-visualizar"
-                        >
-                          {m.type === "video" ? (
-                            <div className="flex size-full items-center justify-center text-muted-foreground">
-                              <VideoIcon className="size-5" />
-                            </div>
-                          ) : m.url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={m.url}
-                              alt={m.name}
-                              className="size-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex size-full items-center justify-center text-muted-foreground">
-                              <ImageIcon className="size-5" />
-                            </div>
-                          )}
-                        </button>
-                      </TableCell>
-                      <TableCell className="font-medium">{m.name}</TableCell>
-                      <TableCell>{m.client.name}</TableCell>
-                      <TableCell>{typeLabel[m.type] ?? m.type}</TableCell>
-                      <TableCell>{m.durationMs / 1000}s</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">
-                          {statusLabel[m.status] ?? m.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="space-x-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setPreview(m)}
-                        >
-                          <EyeIcon className="size-4" />
-                          Ver
-                        </Button>
-                        {m.status === "draft" && (
+                  {filtered.map((m) => {
+                    const hasProofs = (m._count?.proofs ?? 0) > 0
+                    return (
+                      <TableRow key={m.id}>
+                        <TableCell>
+                          <button
+                            type="button"
+                            className="relative block size-14 overflow-hidden rounded-md border bg-muted"
+                            onClick={() => setPreview(m)}
+                            title="Pré-visualizar"
+                          >
+                            {m.type === "video" ? (
+                              <div className="flex size-full items-center justify-center text-muted-foreground">
+                                <VideoIcon className="size-5" />
+                              </div>
+                            ) : m.url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={m.url}
+                                alt={m.name}
+                                className="size-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex size-full items-center justify-center text-muted-foreground">
+                                <ImageIcon className="size-5" />
+                              </div>
+                            )}
+                          </button>
+                        </TableCell>
+                        <TableCell className="font-medium">{m.name}</TableCell>
+                        <TableCell>{m.client.name}</TableCell>
+                        <TableCell>{typeLabel[m.type] ?? m.type}</TableCell>
+                        <TableCell>{m.durationMs / 1000}s</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">
+                            {statusLabel[m.status] ?? m.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="space-x-2 text-right">
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => void submit(m.id)}
+                            onClick={() => setPreview(m)}
                           >
-                            Submeter
+                            <EyeIcon className="size-4" />
+                            Ver
                           </Button>
-                        )}
-                        {m.status === "pending_approval" && (
-                          <Button size="sm" onClick={() => void approve(m.id)}>
-                            Aprovar
+                          {m.status === "draft" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void submit(m.id)}
+                            >
+                              Submeter
+                            </Button>
+                          )}
+                          {m.status === "pending_approval" && (
+                            <Button
+                              size="sm"
+                              onClick={() => void approve(m.id)}
+                            >
+                              Aprovar
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={hasProofs}
+                            title={
+                              hasProofs
+                                ? "Com provas de exibição — não pode remover"
+                                : "Remover criativo"
+                            }
+                            onClick={() => void removeMedia(m)}
+                          >
+                            Remover
                           </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             )}

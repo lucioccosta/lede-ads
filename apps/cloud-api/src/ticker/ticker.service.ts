@@ -313,19 +313,14 @@ export class TickerService {
     }
   }
 
-  /** Yahoo BTC-BRL → AwesomeAPI → CoinGecko. */
+  /**
+   * BTC/BRL: AwesomeAPI → CoinGecko.
+   * Yahoo não tem mais par BTC-BRL (chart HTTP 404 em BTC-BRL=X / BTC-BRL).
+   */
   private async fetchBtc(): Promise<{
     price: number;
     changePct: number | null;
   } | null> {
-    const yahoo = await this.fetchYahoo('BTC-BRL=X');
-    if (yahoo?.regularMarketPrice != null) {
-      return {
-        price: yahoo.regularMarketPrice,
-        changePct: yahoo.regularMarketChangePercent ?? null,
-      };
-    }
-
     try {
       const res = await fetch(
         'https://economia.awesomeapi.com.br/json/last/BTC-BRL',
