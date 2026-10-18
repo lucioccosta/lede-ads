@@ -48,9 +48,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+          cache: gradle
+          cache-dependency-path: apps/edge-android/**/*.gradle*
 
       - name: Read version from Gradle
         id: ver
@@ -94,19 +93,21 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > apps/edge-android/keystore/lede-edge-sideload.jks
           test -s apps/edge-android/keystore/lede-edge-sideload.jks
 
-      - name: Write local.properties
+      - name: Install Android SDK packages
         run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME não definido no runner}"
+          # cmdline-tools path varia entre imagens do runner
+          SM="$(find "$ANDROID_HOME" -path '*/cmdline-tools/*/bin/sdkmanager' | sort -V | tail -1)"
+          if [[ -z "$SM" ]]; then
+            echo "sdkmanager não encontrado em $ANDROID_HOME"
+            ls -la "$ANDROID_HOME" || true
+            exit 1
+          fi
+          echo "sdkmanager=$SM"
+          yes | "$SM" --licenses >/dev/null || true
+          "$SM" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
           echo "sdk.dir=$ANDROID_HOME" > apps/edge-android/local.properties
-
-      - name: Gradle cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-edge-${{ runner.os }}-${{ hashFiles('apps/edge-android/**/*.gradle*', 'apps/edge-android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            gradle-edge-${{ runner.os }}-
 
       - name: Build exportSb3000Apk
         working-directory: apps/edge-android
