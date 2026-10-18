@@ -77,7 +77,10 @@ export class ScenesController {
         },
       },
     });
-    if (!schedule) return null;
+    // Não retornar `null` puro: o Nest envia body vazio e o front quebra no res.json().
+    if (!schedule) {
+      return { schedule: null, scene: null };
+    }
     return {
       schedule: {
         id: schedule.id,

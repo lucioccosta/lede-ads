@@ -32,7 +32,7 @@ type Media = {
   type: string;
 };
 
-type ActivePayload = {
+type ActiveScene = {
   schedule: {
     id: string;
     name: string;
@@ -49,11 +49,17 @@ type ActivePayload = {
       media: Media | null;
     }>;
   };
-} | null;
+};
+
+/** API devolve `{ schedule: null, scene: null }` quando não há aviso ativo. */
+type ActivePayload = {
+  schedule: ActiveScene["schedule"] | null;
+  scene: ActiveScene["scene"] | null;
+};
 
 export default function PortalCondoPage() {
   const [isCondo, setIsCondo] = useState(false);
-  const [active, setActive] = useState<ActivePayload>(null);
+  const [active, setActive] = useState<ActiveScene | null>(null);
   const [library, setLibrary] = useState<Media[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -97,13 +103,17 @@ export default function PortalCondoPage() {
         api<ActivePayload>("/scenes/condo/active"),
         api<Media[]>("/media"),
       ]);
-      setActive(data);
+      const sceneActive =
+        data?.schedule && data?.scene
+          ? { schedule: data.schedule, scene: data.scene }
+          : null;
+      setActive(sceneActive);
       setLibrary(media);
       setFile(null);
       setPreviewUrl(null);
       const currentId =
-        data?.scene.zones.find((z) => {
-          const zones = data.scene.layout.zonesJson ?? [];
+        sceneActive?.scene.zones.find((z) => {
+          const zones = sceneActive.scene.layout.zonesJson ?? [];
           const key =
             zones.find((lz) => (lz.role ?? "full") === "condo")?.key ?? "condo";
           return z.zoneKey === key;
