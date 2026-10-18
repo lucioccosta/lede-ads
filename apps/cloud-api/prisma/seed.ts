@@ -141,6 +141,7 @@ async function main() {
     },
   });
 
+  // Tarja de índices: 36dp ≈ 36px em 1080p / 64px em 1920p (proporção 36/1080)
   const layoutFull = await prisma.layout.create({
     data: {
       name: 'Full Bleed TV',
@@ -155,7 +156,7 @@ async function main() {
           x: 0,
           y: 0,
           width: 1920,
-          height: 1080,
+          height: 1044,
           role: 'full',
         },
       ],
@@ -176,16 +177,16 @@ async function main() {
           x: 0,
           y: 0,
           width: 1080,
-          height: 672,
+          height: 650,
           role: 'condo',
         },
         {
           key: 'ads',
           label: 'Anúncios LEDE',
           x: 0,
-          y: 672,
+          y: 650,
           width: 1080,
-          height: 1248,
+          height: 1206,
           role: 'ads',
         },
       ],

@@ -21,7 +21,11 @@ import kotlin.math.roundToInt
 
 /**
  * Compõe uma cena multi-zona no container, escalando x/y/w/h do layout
- * lógico para o tamanho da tela.
+ * lógico para a área de anúncio (acima da tarja de índices).
+ *
+ * A faixa inferior do layout lógico (proporcional a [TICKER_BAR_DP] sobre
+ * [TICKER_REF_HEIGHT]) é reservada — zonas que invadem essa faixa são
+ * recortadas. O [container] já não inclui o slot físico da tarja (36dp).
  *
  * Vídeo usa [PlayerView] com TextureView (`zone_video.xml`) para respeitar a
  * rotação do [OrientationHelper] em boxes portrait — SurfaceView ignora
@@ -49,8 +53,9 @@ class ZoneComposer(private val context: Context) {
         val screenH = max(1, container.height)
         val layoutW = max(1, scene.layout?.width ?: screenW)
         val layoutH = max(1, scene.layout?.height ?: screenH)
+        val contentLayoutH = max(1, layoutH - tickerReservePx(layoutH))
         val scaleX = screenW.toFloat() / layoutW
-        val scaleY = screenH.toFloat() / layoutH
+        val scaleY = screenH.toFloat() / contentLayoutH
 
         if (scene.zones.isEmpty()) {
             container.setBackgroundColor(Color.BLACK)
@@ -58,15 +63,20 @@ class ZoneComposer(private val context: Context) {
         }
 
         scene.zones.forEach { zone ->
-            val left = ((zone.x ?: 0) * scaleX).roundToInt().coerceIn(0, screenW)
-            val top = ((zone.y ?: 0) * scaleY).roundToInt().coerceIn(0, screenH)
+            val zX = (zone.x ?: 0).coerceIn(0, layoutW - 1)
+            val zY = (zone.y ?: 0).coerceIn(0, contentLayoutH - 1)
+            val zW = max(1, (zone.width ?: layoutW).coerceAtMost(layoutW - zX))
+            val zH = max(1, (zone.height ?: contentLayoutH).coerceAtMost(contentLayoutH - zY))
+
+            val left = (zX * scaleX).roundToInt().coerceIn(0, screenW)
+            val top = (zY * scaleY).roundToInt().coerceIn(0, screenH)
             val width = max(
                 1,
-                ((zone.width ?: layoutW) * scaleX).roundToInt().coerceAtMost(screenW - left),
+                (zW * scaleX).roundToInt().coerceAtMost(screenW - left),
             )
             val height = max(
                 1,
-                ((zone.height ?: layoutH) * scaleY).roundToInt().coerceAtMost(screenH - top),
+                (zH * scaleY).roundToInt().coerceAtMost(screenH - top),
             )
 
             val view = createZoneView(zone)
@@ -75,6 +85,21 @@ class ZoneComposer(private val context: Context) {
                 topMargin = top
             }
             container.addView(view, lp)
+        }
+    }
+
+    companion object {
+        /** Altura física da tarja no player (activity_player.xml). */
+        const val TICKER_BAR_DP = 36
+
+        /** Altura de referência dos layouts (ex.: 1920×1080). */
+        const val TICKER_REF_HEIGHT = 1080
+
+        fun tickerReservePx(layoutH: Int): Int {
+            return max(
+                1,
+                ((layoutH * TICKER_BAR_DP) / TICKER_REF_HEIGHT.toFloat()).roundToInt(),
+            )
         }
     }
 

@@ -78,7 +78,24 @@ const ZONE_PALETTE = [
   { fill: "rgba(34, 211, 238, 0.55)", border: "#06b6d4", text: "#164e63" },
 ]
 
-function fullZone(w: number, h: number): Zone {
+/** Altura da tarja no Edge (36dp). Em layouts, proporção sobre 1080 de referência. */
+const TICKER_BAR_DP = 36
+const TICKER_REF_HEIGHT = 1080
+
+function tickerReservePx(canvasH: number): number {
+  return Math.max(
+    24,
+    Math.round((canvasH * TICKER_BAR_DP) / TICKER_REF_HEIGHT),
+  )
+}
+
+/** Altura útil para zonas de anúncio (canvas menos a tarja). */
+function contentHeight(canvasH: number): number {
+  return Math.max(1, canvasH - tickerReservePx(canvasH))
+}
+
+function fullZone(w: number, canvasH: number): Zone {
+  const h = contentHeight(canvasH)
   return {
     key: "main",
     label: "Principal",
@@ -88,6 +105,18 @@ function fullZone(w: number, h: number): Zone {
     height: h,
     role: "full",
   }
+}
+
+/** Recorta zonas que invadem a faixa da tarja (layouts antigos). */
+function clampZonesToContent(zones: Zone[], canvasW: number, canvasH: number): Zone[] {
+  const contentH = contentHeight(canvasH)
+  return zones.map((z) => {
+    const y = Math.max(0, Math.min(z.y, contentH - 1))
+    const height = Math.max(1, Math.min(z.height, contentH - y))
+    const x = Math.max(0, Math.min(z.x, canvasW - 1))
+    const width = Math.max(1, Math.min(z.width, canvasW - x))
+    return { ...z, x, y, width, height }
+  })
 }
 
 function gridLayout(count: number, canvasW: number, canvasH: number) {
@@ -148,34 +177,40 @@ function scaleZonesToCanvas(
   canvasW: number,
   canvasH: number,
 ): Zone[] {
+  const prevContentH = contentHeight(prevH)
+  const contentH = contentHeight(canvasH)
+
   if (zones.length === 1) {
     const z = zones[0]
     const wasFull =
-      z.x === 0 && z.y === 0 && z.width === prevW && z.height === prevH
+      z.x === 0 &&
+      z.y === 0 &&
+      z.width === prevW &&
+      (z.height === prevContentH || z.height === prevH)
     if (wasFull) {
-      return [{ ...z, width: canvasW, height: canvasH }]
+      return [{ ...z, width: canvasW, height: contentH }]
     }
   }
 
   const scaled = zones.map((z) => ({
     ...z,
     x: Math.round((z.x / prevW) * canvasW),
-    y: Math.round((z.y / prevH) * canvasH),
+    y: Math.round((z.y / prevContentH) * contentH),
     width: Math.max(1, Math.round((z.width / prevW) * canvasW)),
-    height: Math.max(1, Math.round((z.height / prevH) * canvasH)),
+    height: Math.max(1, Math.round((z.height / prevContentH) * contentH)),
   }))
 
-  // Absorve resto de arredondamento nas bordas direitas/inferiores
+  // Absorve resto de arredondamento nas bordas direitas/inferiores (área útil)
   return scaled.map((z) => {
-    const touchesRight = Math.abs(z.x + z.width - canvasW) <= EDGE_TOL ||
-      z.x + z.width > canvasW
+    const touchesRight =
+      Math.abs(z.x + z.width - canvasW) <= EDGE_TOL || z.x + z.width > canvasW
     const touchesBottom =
-      Math.abs(z.y + z.height - canvasH) <= EDGE_TOL ||
-      z.y + z.height > canvasH
+      Math.abs(z.y + z.height - contentH) <= EDGE_TOL ||
+      z.y + z.height > contentH
     return {
       ...z,
       width: touchesRight ? Math.max(1, canvasW - z.x) : z.width,
-      height: touchesBottom ? Math.max(1, canvasH - z.y) : z.height,
+      height: touchesBottom ? Math.max(1, contentH - z.y) : z.height,
     }
   })
 }
@@ -191,14 +226,15 @@ function rebalanceAdjacentZones(
   canvasW: number,
   canvasH: number,
 ): Zone[] {
+  const contentH = contentHeight(canvasH)
   const old = zones[index]
   const next = zones.map((z, i) => (i === index ? { ...z, ...patch } : { ...z }))
   const edited = next[index]
 
   edited.x = Math.max(0, Math.min(edited.x, canvasW - 1))
-  edited.y = Math.max(0, Math.min(edited.y, canvasH - 1))
+  edited.y = Math.max(0, Math.min(edited.y, contentH - 1))
   edited.width = Math.max(1, Math.min(edited.width, canvasW - edited.x))
-  edited.height = Math.max(1, Math.min(edited.height, canvasH - edited.y))
+  edited.height = Math.max(1, Math.min(edited.height, contentH - edited.y))
 
   if (patch.width !== undefined) {
     const oldRight = old.x + old.width
@@ -267,10 +303,10 @@ function rebalanceAdjacentZones(
       if (Math.abs(o.y + o.height - old.y) <= EDGE_TOL) {
         if (patch.y !== undefined) {
           o.height = Math.max(1, edited.y - o.y)
-        } else if (!adjustedBelow && Math.abs(oldBottom - canvasH) <= EDGE_TOL) {
-          const anchoredHeight = Math.max(1, Math.min(edited.height, canvasH - 1))
+        } else if (!adjustedBelow && Math.abs(oldBottom - contentH) <= EDGE_TOL) {
+          const anchoredHeight = Math.max(1, Math.min(edited.height, contentH - 1))
           edited.height = anchoredHeight
-          edited.y = canvasH - anchoredHeight
+          edited.y = contentH - anchoredHeight
           o.height = Math.max(1, edited.y - o.y)
         }
       }
@@ -283,8 +319,9 @@ function rebalanceAdjacentZones(
 function presetZones(
   preset: "full" | "split-h" | "split-v" | "pip" | "condo-split",
   w: number,
-  h: number,
+  canvasH: number,
 ): Zone[] {
+  const h = contentHeight(canvasH)
   if (preset === "condo-split") {
     const topH = Math.floor(h * 0.35)
     return [
@@ -376,7 +413,7 @@ function presetZones(
       },
     ]
   }
-  return [fullZone(w, h)]
+  return [fullZone(w, canvasH)]
 }
 
 function ZonePreview({
@@ -395,6 +432,8 @@ function ZonePreview({
   const scale = Math.min(maxW / safeW, maxH / safeH)
   const previewW = Math.max(1, Math.round(safeW * scale))
   const previewH = Math.max(1, Math.round(safeH * scale))
+  const tickerH = Math.max(10, Math.round(tickerReservePx(safeH) * scale))
+  const contentPreviewH = Math.max(1, previewH - tickerH)
   const gap = 3
   const outerRadius = 12
   const zoneRadius = outerRadius
@@ -429,16 +468,16 @@ function ZonePreview({
         const rawWidth = z.width * scale
         const rawHeight = z.height * scale
 
-        // Mantém o bloco sempre dentro do fundo da miniatura
+        // Mantém o bloco sempre na área de anúncio (acima da tarja)
         const left = Math.max(0, Math.min(rawLeft, previewW))
-        const top = Math.max(0, Math.min(rawTop, previewH))
+        const top = Math.max(0, Math.min(rawTop, contentPreviewH))
         const width = Math.max(
           0,
           Math.min(rawWidth, previewW - left),
         )
         const height = Math.max(
           0,
-          Math.min(rawHeight, previewH - top),
+          Math.min(rawHeight, contentPreviewH - top),
         )
 
         if (width <= 0 || height <= 0) return null
@@ -476,6 +515,17 @@ function ZonePreview({
           </div>
         )
       })}
+      <div
+        className="absolute inset-x-0 bottom-0 flex items-center justify-center border-t border-orange-500/80 bg-slate-100"
+        style={{ height: tickerH }}
+        title="Tarja de índices (reservada)"
+      >
+        {tickerH >= 14 && (
+          <span className="truncate px-1 text-[8px] font-bold uppercase tracking-wide text-slate-500">
+            Índices
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -495,6 +545,8 @@ export default function LayoutsPage() {
 
   const canvasW = Number(width) || 1920
   const canvasH = Number(height) || 1080
+  const contentH = contentHeight(canvasH)
+  const tickerH = tickerReservePx(canvasH)
   const lastCanvasRef = useRef({ w: canvasW, h: canvasH })
 
   const filtered = useMemo(() => {
@@ -573,14 +625,13 @@ export default function LayoutsPage() {
     setWidth(String(layout.width))
     setHeight(String(layout.height))
     setPreset("custom")
-    setZones(
-      layout.zonesJson?.length
-        ? layout.zonesJson.map((z) => ({
-            ...z,
-            role: z.role ?? "full",
-          }))
-        : [fullZone(layout.width, layout.height)],
-    )
+    const raw = layout.zonesJson?.length
+      ? layout.zonesJson.map((z) => ({
+          ...z,
+          role: z.role ?? ("full" as ZoneRole),
+        }))
+      : [fullZone(layout.width, layout.height)]
+    setZones(clampZonesToContent(raw, layout.width, layout.height))
     lastCanvasRef.current = { w: layout.width, h: layout.height }
     setOpen(true)
   }
@@ -622,11 +673,11 @@ export default function LayoutsPage() {
       x: 0,
       y: 0,
       width: canvasW,
-      height: canvasH,
+      height: contentH,
       role: "full",
     }
     setZones((prev) =>
-      redistributeZones([...prev, next], canvasW, canvasH),
+      redistributeZones([...prev, next], canvasW, contentH),
     )
   }
 
@@ -640,7 +691,7 @@ export default function LayoutsPage() {
       redistributeZones(
         prev.filter((_, i) => i !== index),
         canvasW,
-        canvasH,
+        contentH,
       ),
     )
   }
@@ -652,13 +703,14 @@ export default function LayoutsPage() {
       return
     }
     const selectedType = screenTypes.find((t) => t.id === screenTypeId)
+    const safeZones = clampZonesToContent(zones, canvasW, canvasH)
     const payload = {
       name,
       screenType: selectedType?.slug ?? "tv",
       screenTypeId: screenTypeId || undefined,
       width: canvasW,
       height: canvasH,
-      zones: zones.map((z) => ({
+      zones: safeZones.map((z) => ({
         key: z.key.trim(),
         label: z.label.trim() || z.key.trim(),
         x: Number(z.x),
@@ -809,7 +861,8 @@ export default function LayoutsPage() {
                   />
                 </div>
                 <p className="text-center text-xs text-muted-foreground">
-                  {canvasW}×{canvasH} · {zones.length} zona
+                  {canvasW}×{canvasH} · área útil {canvasW}×{contentH} · tarja{" "}
+                  {tickerH}px · {zones.length} zona
                   {zones.length === 1 ? "" : "s"}
                 </p>
               </div>
@@ -821,7 +874,9 @@ export default function LayoutsPage() {
               <div>
                 <Label>Zonas</Label>
                 <p className="text-xs text-muted-foreground">
-                  key = id técnico · label = nome amigável · x/y/w/h em pixels
+                  key = id técnico · label = nome amigável · x/y/w/h em pixels.
+                  A faixa inferior ({tickerH}px) fica reservada para a tarja de
+                  índices.
                 </p>
               </div>
               <Button type="button" variant="outline" size="sm" onClick={addZone}>
