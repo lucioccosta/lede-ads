@@ -3,17 +3,34 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ScheduleChannel } from '@prisma/client';
+import { ClientKind, ScheduleChannel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateScheduleDto, UpdateScheduleDto } from './dto/schedule.dto';
+import {
+  CreateScheduleDto,
+  ScheduleChannelInput,
+  UpdateScheduleDto,
+} from './dto/schedule.dto';
+import { isCondoKind } from '../common/client-kind';
 
 function toChannel(
-  channel?: 'full' | 'condo' | 'ads',
+  channel?: ScheduleChannelInput,
 ): ScheduleChannel | undefined {
   if (!channel) return undefined;
-  if (channel === 'condo') return ScheduleChannel.condo;
-  if (channel === 'ads') return ScheduleChannel.ads;
-  return ScheduleChannel.full;
+  if (channel === 'condo' || channel === 'condo_notice') {
+    return ScheduleChannel.condo_notice;
+  }
+  if (channel === 'ads' || channel === 'paid_ad') {
+    return ScheduleChannel.paid_ad;
+  }
+  return ScheduleChannel.takeover;
+}
+
+function channelKey(
+  channel: ScheduleChannel,
+): 'takeover' | 'condo_notice' | 'paid_ad' {
+  if (channel === ScheduleChannel.condo_notice) return 'condo_notice';
+  if (channel === ScheduleChannel.paid_ad) return 'paid_ad';
+  return 'takeover';
 }
 
 @Injectable()
@@ -22,28 +39,31 @@ export class SchedulesService {
 
   private async assertChannelForClient(
     clientId: string,
-    channel?: 'full' | 'condo' | 'ads',
+    channel?: ScheduleChannelInput,
   ) {
-    const resolved = channel ?? 'full';
+    const resolved = toChannel(channel) ?? ScheduleChannel.takeover;
     const client = await this.prisma.client.findUnique({
       where: { id: clientId },
-      select: { id: true, isCondo: true },
+      select: { id: true, kind: true },
     });
     if (!client) throw new NotFoundException('Cliente não encontrado');
-    if (client.isCondo && resolved === 'ads') {
+    if (isCondoKind(client.kind) && resolved === ScheduleChannel.paid_ad) {
       throw new BadRequestException(
         'Cliente condomínio não pode usar o canal Anúncios LEDE',
       );
     }
-    if (!client.isCondo && resolved === 'condo') {
+    if (
+      client.kind === ClientKind.advertiser &&
+      resolved === ScheduleChannel.condo_notice
+    ) {
       throw new BadRequestException(
         'Cliente anunciante não pode usar o canal Condomínio',
       );
     }
   }
 
-  findAll(deviceId?: string, clientId?: string) {
-    return this.prisma.schedule.findMany({
+  async findAll(deviceId?: string, clientId?: string) {
+    const rows = await this.prisma.schedule.findMany({
       where: {
         ...(deviceId ? { deviceId } : {}),
         ...(clientId ? { clientId } : {}),
@@ -53,10 +73,19 @@ export class SchedulesService {
         plan: true,
         device: true,
         group: { select: { id: true, name: true } },
-        client: { select: { id: true, name: true, isCondo: true } },
+        client: { select: { id: true, name: true, kind: true } },
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
+    return rows.map((s) => ({
+      ...s,
+      client: s.client
+        ? {
+            ...s.client,
+            isCondo: isCondoKind(s.client.kind),
+          }
+        : s.client,
+    }));
   }
 
   async findOne(id: string) {
@@ -73,10 +102,6 @@ export class SchedulesService {
     return schedule;
   }
 
-  /**
-   * Se a agenda aponta a um plano sem anunciante, atribui o cliente da agenda.
-   * Se o plano já tem outro anunciante, rejeita.
-   */
   private async bindPlanToClient(
     planId: string | null | undefined,
     clientId: string,
@@ -100,8 +125,52 @@ export class SchedulesService {
     }
   }
 
+  private assertTarget(
+    deviceId: string | null | undefined,
+    groupId: string | null | undefined,
+  ) {
+    const hasDevice = !!deviceId;
+    const hasGroup = !!groupId;
+    if (hasDevice === hasGroup) {
+      throw new BadRequestException(
+        'Informe exatamente um alvo: tela ou grupo de telas',
+      );
+    }
+  }
+
+  private async assertPlanLink(
+    planId: string | null | undefined,
+    groupId: string | null | undefined,
+    channel?: ScheduleChannelInput,
+  ) {
+    if (!planId) return;
+    if (!groupId) {
+      throw new BadRequestException(
+        'Agenda com plano deve apontar para um grupo de telas do plano',
+      );
+    }
+    const resolved = toChannel(channel) ?? ScheduleChannel.paid_ad;
+    if (resolved !== ScheduleChannel.paid_ad) {
+      throw new BadRequestException(
+        'Agenda vinculada a plano deve usar o canal Anúncios LEDE',
+      );
+    }
+    const link = await this.prisma.planDeviceGroup.findUnique({
+      where: {
+        planId_deviceGroupId: { planId, deviceGroupId: groupId },
+      },
+    });
+    if (!link) {
+      throw new BadRequestException(
+        'O grupo selecionado não pertence ao plano',
+      );
+    }
+  }
+
   async create(dto: CreateScheduleDto) {
     await this.assertChannelForClient(dto.clientId, dto.channel);
+    this.assertTarget(dto.deviceId, dto.groupId);
+    await this.assertPlanLink(dto.planId, dto.groupId, dto.channel);
     await this.bindPlanToClient(dto.planId, dto.clientId);
     return this.prisma.schedule.create({
       data: {
@@ -111,7 +180,7 @@ export class SchedulesService {
         planId: dto.planId ?? null,
         deviceId: dto.deviceId ?? null,
         groupId: dto.groupId ?? null,
-        channel: toChannel(dto.channel) ?? ScheduleChannel.full,
+        channel: toChannel(dto.channel) ?? ScheduleChannel.takeover,
         priority: dto.priority ?? 0,
         daysOfWeek: dto.daysOfWeek,
         startTime: dto.startTime,
@@ -127,8 +196,15 @@ export class SchedulesService {
     if (dto.channel !== undefined) {
       await this.assertChannelForClient(current.clientId, dto.channel);
     }
+    const nextDeviceId =
+      dto.deviceId === undefined ? current.deviceId : dto.deviceId;
+    const nextGroupId =
+      dto.groupId === undefined ? current.groupId : dto.groupId;
     const nextPlanId =
       dto.planId === undefined ? current.planId : dto.planId;
+    const nextChannel = dto.channel ?? channelKey(current.channel);
+    this.assertTarget(nextDeviceId, nextGroupId);
+    await this.assertPlanLink(nextPlanId, nextGroupId, nextChannel);
     await this.bindPlanToClient(nextPlanId, current.clientId);
     return this.prisma.schedule.update({
       where: { id },

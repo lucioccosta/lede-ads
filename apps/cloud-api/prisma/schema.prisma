@@ -60,21 +60,27 @@ enum ScreenTypeMode {
 }
 
 enum ScheduleChannel {
-  full
+  takeover
+  condo_notice
+  paid_ad
+}
+
+enum ClientKind {
   condo
-  ads
+  advertiser
+  network
 }
 
 model Client {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   name      String
   document  String?
   email     String?
   phone     String?
-  isCondo   Boolean  @default(false)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  kind      ClientKind @default(advertiser)
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   users              User[]
   plans              Plan[]
@@ -110,21 +116,21 @@ model RolePermission {
 }
 
 model Plan {
-  id                String    @id @default(cuid())
-  clientId          String?
-  client            Client?   @relation(fields: [clientId], references: [id])
-  name              String
-  samplesPerDay     Int
-  sampleDurationSec Int       @default(10)
-  months            Int       @default(1)
-  startsAt          DateTime
-  endsAt            DateTime?
-  active            Boolean   @default(true)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  clientId      String?
+  client        Client?   @relation(fields: [clientId], references: [id])
+  name          String
+  samplesPerDay Int
+  months        Int       @default(1)
+  startsAt      DateTime
+  endsAt        DateTime?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   schedules   Schedule[]
   deviceGroups PlanDeviceGroup[]
+  proofs      ProofOfPlay[]
 }
 
 model DeviceGroup {
@@ -135,6 +141,10 @@ model DeviceGroup {
   active              Boolean  @default(true)
   viewingHoursPerDay  Int      @default(18)
   sampleDurationSec   Int      @default(10)
+  /** Público estimado (métrica comercial). */
+  impactedPeople      Int      @default(0)
+  /** Preço por tela/mês em centavos (ex.: 3750 = R$ 37,50). */
+  pricePerScreenCents Int      @default(0)
   houseSceneId        String?
   houseScene          Scene?   @relation("GroupHouseScene", fields: [houseSceneId], references: [id])
   createdAt           DateTime @default(now())
@@ -183,16 +193,15 @@ model ClientScreenType {
 }
 
 model Layout {
-  id           String      @id @default(cuid())
-  name         String
-  screenType   String
-  screenTypeId String?
-  screenTypeRef ScreenType? @relation(fields: [screenTypeId], references: [id])
-  width        Int
-  height       Int
-  zonesJson    Json
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id            String     @id @default(cuid())
+  name          String
+  screenTypeId  String
+  screenTypeRef ScreenType @relation(fields: [screenTypeId], references: [id])
+  width         Int
+  height        Int
+  zonesJson     Json
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   scenes Scene[]
 }
@@ -315,7 +324,7 @@ model Schedule {
   device        Device?         @relation(fields: [deviceId], references: [id])
   groupId       String?
   group         DeviceGroup?    @relation(fields: [groupId], references: [id])
-  channel       ScheduleChannel @default(full)
+  channel       ScheduleChannel @default(takeover)
   priority      Int             @default(0)
   daysOfWeek    Int[]
   startTime     String
@@ -325,23 +334,31 @@ model Schedule {
   active        Boolean         @default(true)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+
+  proofs ProofOfPlay[]
 }
 
 model ProofOfPlay {
-  id        String   @id @default(cuid())
-  deviceId  String
-  device    Device   @relation(fields: [deviceId], references: [id])
-  sceneId   String
-  scene     Scene    @relation(fields: [sceneId], references: [id])
-  mediaId   String
-  media     Media    @relation(fields: [mediaId], references: [id])
-  startedAt DateTime
-  endedAt   DateTime
-  checksum  String
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  deviceId   String
+  device     Device    @relation(fields: [deviceId], references: [id])
+  sceneId    String
+  scene      Scene     @relation(fields: [sceneId], references: [id])
+  mediaId    String
+  media      Media     @relation(fields: [mediaId], references: [id])
+  planId     String?
+  plan       Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  scheduleId String?
+  schedule   Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  startedAt  DateTime
+  endedAt    DateTime
+  checksum   String
+  createdAt  DateTime  @default(now())
 
   @@index([deviceId, startedAt])
   @@index([mediaId, startedAt])
+  @@index([planId, startedAt])
+  @@index([scheduleId, startedAt])
 }
 
 enum ChangeLogAction {

@@ -15,15 +15,22 @@ import {
 export class MediaService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(clientId?: string) {
-    return this.prisma.media.findMany({
+  async findAll(clientId?: string) {
+    const rows = await this.prisma.media.findMany({
       where: clientId ? { clientId } : undefined,
       include: {
-        client: { select: { id: true, name: true, isCondo: true } },
+        client: { select: { id: true, name: true, kind: true } },
         _count: { select: { sceneZones: true, proofs: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((m) => ({
+      ...m,
+      client: {
+        ...m.client,
+        isCondo: m.client.kind === 'condo',
+      },
+    }));
   }
 
   async findOne(id: string) {

@@ -52,6 +52,10 @@ type DeviceGroup = {
   active: boolean
   viewingHoursPerDay: number
   sampleDurationSec: number
+  impactedPeople: number
+  pricePerScreenCents: number
+  screenCount?: number
+  condoPriceCents?: number
   houseSceneId: string | null
   client: { id: string; name: string; isCondo: boolean }
   houseScene?: { id: string; name: string } | null
@@ -66,6 +70,19 @@ type DeviceGroup = {
   }
 }
 
+function brlFromCents(cents: number) {
+  return (cents / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  })
+}
+
+function reaisToCents(reais: string) {
+  const n = Number(reais.replace(",", "."))
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.round(n * 100)
+}
+
 export default function DeviceGroupsPage() {
   const [items, setItems] = useState<DeviceGroup[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -78,6 +95,8 @@ export default function DeviceGroupsPage() {
   const [clientId, setClientId] = useState("")
   const [viewingHours, setViewingHours] = useState("18")
   const [sampleDuration, setSampleDuration] = useState("10")
+  const [impactedPeople, setImpactedPeople] = useState("0")
+  const [pricePerScreen, setPricePerScreen] = useState("0")
   const [houseSceneId, setHouseSceneId] = useState("none")
   const [selectedDevices, setSelectedDevices] = useState<string[]>([])
 
@@ -132,6 +151,8 @@ export default function DeviceGroupsPage() {
     setClientId(condoClients[0]?.id ?? "")
     setViewingHours("18")
     setSampleDuration("10")
+    setImpactedPeople("0")
+    setPricePerScreen("0")
     setHouseSceneId(houseScenes[0]?.id ?? "none")
     setSelectedDevices([])
     setOpen(true)
@@ -143,10 +164,21 @@ export default function DeviceGroupsPage() {
     setClientId(group.clientId)
     setViewingHours(String(group.viewingHoursPerDay))
     setSampleDuration(String(group.sampleDurationSec))
+    setImpactedPeople(String(group.impactedPeople ?? 0))
+    setPricePerScreen(((group.pricePerScreenCents ?? 0) / 100).toFixed(2))
     setHouseSceneId(group.houseSceneId ?? "none")
     setSelectedDevices(group.devices.map((d) => d.id))
     setOpen(true)
   }
+
+  const pricePreview = useMemo(() => {
+    const screens = selectedDevices.length
+    const cents = reaisToCents(pricePerScreen)
+    return {
+      screens,
+      condoCents: screens * cents,
+    }
+  }, [selectedDevices.length, pricePerScreen])
 
   function toggleDevice(id: string) {
     setSelectedDevices((prev) =>
@@ -165,6 +197,8 @@ export default function DeviceGroupsPage() {
       clientId,
       viewingHoursPerDay: Number(viewingHours),
       sampleDurationSec: Number(sampleDuration),
+      impactedPeople: Number(impactedPeople) || 0,
+      pricePerScreenCents: reaisToCents(pricePerScreen),
       houseSceneId: houseSceneId === "none" ? null : houseSceneId,
       deviceIds: selectedDevices,
     }
@@ -274,13 +308,42 @@ export default function DeviceGroupsPage() {
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Pessoas impactadas</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={impactedPeople}
+                  onChange={(e) => setImpactedPeople(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Valor por tela (R$/mês)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={pricePerScreen}
+                  onChange={(e) => setPricePerScreen(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {pricePreview.screens} tela(s) ×{" "}
+              {brlFromCents(reaisToCents(pricePerScreen))} ={" "}
+              <span className="font-medium text-foreground">
+                {brlFromCents(pricePreview.condoCents)}
+              </span>{" "}
+              / mês pelo condomínio
+            </p>
             <div className="space-y-2">
               <Label>Cena house (Anuncie AQUI)</Label>
               <Select
                 value={houseSceneId}
                 onValueChange={(v) => setHouseSceneId(v ?? "none")}
                 items={{
-                  none: "Global (primeira isHouseAd)",
+                  none: "Nenhuma (sem fill house)",
                   ...Object.fromEntries(houseScenes.map((s) => [s.id, s.name])),
                 }}
               >
@@ -288,7 +351,7 @@ export default function DeviceGroupsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Global (primeira isHouseAd)</SelectItem>
+                  <SelectItem value="none">Nenhuma (sem fill house)</SelectItem>
                   {houseScenes.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.name}
@@ -351,23 +414,31 @@ export default function DeviceGroupsPage() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Condomínio</TableHead>
                   <TableHead>Telas</TableHead>
-                  <TableHead>Capacidade/dia</TableHead>
+                  <TableHead>Público</TableHead>
+                  <TableHead>R$/tela</TableHead>
+                  <TableHead>Valor/mês</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((g) => (
+                {filtered.map((g) => {
+                  const screens = g.screenCount ?? g._count?.devices ?? g.devices.length
+                  const condoCents =
+                    g.condoPriceCents ?? screens * (g.pricePerScreenCents ?? 0)
+                  return (
                   <TableRow key={g.id}>
                     <TableCell className="font-medium">{g.name}</TableCell>
                     <TableCell>{g.client.name}</TableCell>
-                    <TableCell>{g._count?.devices ?? g.devices.length}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {g.viewingHoursPerDay}h ×{" "}
-                      {Math.floor(
-                        (g.viewingHoursPerDay * 3600) / g.sampleDurationSec,
-                      )}{" "}
-                      slots × {g._count?.devices ?? g.devices.length}
+                    <TableCell>{screens}</TableCell>
+                    <TableCell>
+                      {(g.impactedPeople ?? 0).toLocaleString("pt-BR")}
+                    </TableCell>
+                    <TableCell>
+                      {brlFromCents(g.pricePerScreenCents ?? 0)}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {brlFromCents(condoCents)}
                     </TableCell>
                     <TableCell>
                       <Badge variant={g.active ? "default" : "secondary"}>
@@ -391,7 +462,8 @@ export default function DeviceGroupsPage() {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           </CardContent>

@@ -37,7 +37,7 @@ export function resolveClientScope(
   return queryClientId;
 }
 
-/** Exige que o cliente vinculado seja marcado como condomínio (isCondo). */
+/** Exige que o cliente vinculado seja kind=condo. */
 export async function requireCondoClient(
   prisma: PrismaService,
   user: AuthUser,
@@ -45,9 +45,9 @@ export async function requireCondoClient(
   const clientId = requireClientId(user);
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) throw new NotFoundException('Cliente não encontrado');
-  if (!client.isCondo) {
+  if (client.kind !== 'condo') {
     throw new ForbiddenException(
-      'Apenas clientes marcados como condomínio podem realizar esta ação',
+      'Apenas clientes condomínio podem realizar esta ação',
     );
   }
   return client;
@@ -65,23 +65,7 @@ export async function assertClientCanUseLayout(
   });
   if (!layout) throw new NotFoundException('Layout não encontrado');
 
-  const screenTypeId = layout.screenTypeId;
-  if (!screenTypeId) {
-    throw new BadRequestException(
-      'Layout sem tipo de tela — condomínio só pode usar layouts de tipos permitidos',
-    );
-  }
-
-  const allowed = await prisma.clientScreenType.findUnique({
-    where: {
-      clientId_screenTypeId: { clientId, screenTypeId },
-    },
-  });
-  if (!allowed) {
-    throw new ForbiddenException(
-      'Tipo de tela não liberado para este condomínio',
-    );
-  }
+  await assertClientScreenType(prisma, clientId, layout.screenTypeId);
 
   const zones = Array.isArray(layout.zonesJson)
     ? (layout.zonesJson as Array<{ key: string; role?: string }>)
@@ -96,6 +80,28 @@ export async function assertClientCanUseLayout(
   return { layout, condoKeys };
 }
 
+/** Tipo de tela liberado para o condomínio (allowlist ClientScreenType). */
+export async function assertClientScreenType(
+  prisma: PrismaService,
+  clientId: string,
+  screenTypeId: string | null | undefined,
+  label = 'tipo de tela',
+) {
+  if (!screenTypeId) {
+    throw new BadRequestException(`Informe o ${label}`);
+  }
+  const allowed = await prisma.clientScreenType.findUnique({
+    where: {
+      clientId_screenTypeId: { clientId, screenTypeId },
+    },
+  });
+  if (!allowed) {
+    throw new ForbiddenException(
+      'Tipo de tela não liberado para este condomínio',
+    );
+  }
+}
+
 export async function assertClientDevice(
   prisma: PrismaService,
   clientId: string,
@@ -107,20 +113,5 @@ export async function assertClientDevice(
   if (device.clientId !== clientId) {
     throw new ForbiddenException('Device não pertence a este condomínio');
   }
-  if (!device.screenTypeId) {
-    throw new BadRequestException('Device sem tipo de tela');
-  }
-  const allowed = await prisma.clientScreenType.findUnique({
-    where: {
-      clientId_screenTypeId: {
-        clientId,
-        screenTypeId: device.screenTypeId,
-      },
-    },
-  });
-  if (!allowed) {
-    throw new ForbiddenException(
-      'Tipo de tela do device não liberado para este condomínio',
-    );
-  }
+  await assertClientScreenType(prisma, clientId, device.screenTypeId);
 }

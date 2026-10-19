@@ -1,11 +1,13 @@
 import {
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsOptional,
   IsString,
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { ClientKind } from '@prisma/client';
 
 export class CreateClientDto {
   @IsString()
@@ -25,6 +27,11 @@ export class CreateClientDto {
   @IsString()
   phone?: string;
 
+  @IsOptional()
+  @IsEnum(ClientKind)
+  kind?: ClientKind;
+
+  /** @deprecated use kind */
   @IsOptional()
   @IsBoolean()
   isCondo?: boolean;
@@ -51,6 +58,11 @@ export class UpdateClientDto {
   @IsString()
   phone?: string | null;
 
+  @IsOptional()
+  @IsEnum(ClientKind)
+  kind?: ClientKind;
+
+  /** @deprecated use kind */
   @IsOptional()
   @IsBoolean()
   isCondo?: boolean;

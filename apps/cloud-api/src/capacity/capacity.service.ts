@@ -13,6 +13,9 @@ export type GroupCapacity = {
   deviceCount: number;
   viewingHoursPerDay: number;
   sampleDurationSec: number;
+  impactedPeople: number;
+  pricePerScreenCents: number;
+  condoPriceCents: number;
   slotsPerScreenDay: number;
   capacityPerDay: number;
   soldPerDay: number;
@@ -105,6 +108,9 @@ export class CapacityService {
       deviceCount,
       viewingHoursPerDay: group.viewingHoursPerDay,
       sampleDurationSec: group.sampleDurationSec,
+      impactedPeople: group.impactedPeople,
+      pricePerScreenCents: group.pricePerScreenCents,
+      condoPriceCents: deviceCount * group.pricePerScreenCents,
       slotsPerScreenDay: slots,
       capacityPerDay,
       soldPerDay,
@@ -187,6 +193,9 @@ export class CapacityService {
         deviceCount,
         viewingHoursPerDay: group.viewingHoursPerDay,
         sampleDurationSec: group.sampleDurationSec,
+        impactedPeople: group.impactedPeople,
+        pricePerScreenCents: group.pricePerScreenCents,
+        condoPriceCents: deviceCount * group.pricePerScreenCents,
         slotsPerScreenDay: slots,
         capacityPerDay,
         soldPerDay,

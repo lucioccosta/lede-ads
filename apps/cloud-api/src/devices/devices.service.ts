@@ -22,6 +22,7 @@ import {
 } from './dto/device.dto';
 import { EdgeReleaseService } from './edge-release.service';
 import { publicBaseUrl } from '../common/public-url';
+import { assertClientScreenType } from '../common/condo-access';
 
 const OFFLINE_MS = 2 * 60 * 1000;
 
@@ -195,6 +196,13 @@ export class DevicesService {
         where: { id: dto.clientId },
       });
       if (!client) throw new NotFoundException('Cliente não encontrado');
+      if (client.kind === 'condo') {
+        await assertClientScreenType(
+          this.prisma,
+          dto.clientId,
+          dto.screenTypeId,
+        );
+      }
     }
     const device = await this.prisma.device.create({
       data: {
@@ -247,18 +255,31 @@ export class DevicesService {
   }
 
   async update(id: string, dto: UpdateDeviceDto) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
     if (dto.screenTypeId) {
       const st = await this.prisma.screenType.findUnique({
         where: { id: dto.screenTypeId },
       });
       if (!st) throw new NotFoundException('Tipo de tela não encontrado');
     }
-    if (dto.clientId) {
+    const nextClientId =
+      dto.clientId === undefined ? existing.clientId : dto.clientId;
+    const nextScreenTypeId =
+      dto.screenTypeId === undefined
+        ? existing.screenTypeId
+        : dto.screenTypeId;
+    if (nextClientId) {
       const client = await this.prisma.client.findUnique({
-        where: { id: dto.clientId },
+        where: { id: nextClientId },
       });
       if (!client) throw new NotFoundException('Cliente não encontrado');
+      if (client.kind === 'condo') {
+        await assertClientScreenType(
+          this.prisma,
+          nextClientId,
+          nextScreenTypeId,
+        );
+      }
     }
     const device = await this.prisma.device.update({
       where: { id },

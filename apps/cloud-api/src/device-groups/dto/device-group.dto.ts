@@ -31,6 +31,19 @@ export class CreateDeviceGroupDto {
   sampleDurationSec?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  impactedPeople?: number;
+
+  /** Centavos por tela/mês (3750 = R$ 37,50). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  pricePerScreenCents?: number;
+
+  @IsOptional()
   @ValidateIf((_o, v) => v !== null)
   @IsString()
   houseSceneId?: string | null;
@@ -66,6 +79,18 @@ export class UpdateDeviceGroupDto {
   @Min(1)
   @Type(() => Number)
   sampleDurationSec?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  impactedPeople?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  pricePerScreenCents?: number;
 
   @IsOptional()
   @ValidateIf((_o, v) => v !== null)

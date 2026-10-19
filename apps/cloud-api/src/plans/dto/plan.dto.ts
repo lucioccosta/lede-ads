@@ -28,12 +28,6 @@ export class CreatePlanDto {
   @IsInt()
   @Min(1)
   @Type(() => Number)
-  sampleDurationSec?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
   months?: number;
 
   @IsDateString()
@@ -64,12 +58,6 @@ export class UpdatePlanDto {
   @Min(1)
   @Type(() => Number)
   samplesPerDay?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
-  sampleDurationSec?: number;
 
   @IsOptional()
   @IsInt()

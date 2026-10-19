@@ -52,11 +52,17 @@ type LayoutZone = {
   role?: ZoneRole
 }
 
-function zonesForClient(zones: LayoutZone[], isCondo: boolean): LayoutZone[] {
-  const target: ZoneRole = isCondo ? "condo" : "ads"
+function zonesForClient(
+  zones: LayoutZone[],
+  opts: { isCondo: boolean; isHouseAd?: boolean },
+): LayoutZone[] {
+  if (opts.isHouseAd) {
+    const ads = zones.filter((z) => (z.role ?? "full") === "ads")
+    return ads.length > 0 ? ads : zones.filter((z) => (z.role ?? "full") === "full")
+  }
+  const target: ZoneRole = opts.isCondo ? "condo" : "ads"
   const matched = zones.filter((z) => (z.role ?? "full") === target)
   if (matched.length > 0) return matched
-  // Layouts sem split: mantém zonas full
   return zones.filter((z) => (z.role ?? "full") === "full")
 }
 type Layout = {
@@ -77,6 +83,7 @@ type Scene = {
   name: string
   durationMs: number
   active: boolean
+  isHouseAd?: boolean
   clientId: string
   layoutId: string
   client: { name: string; isCondo?: boolean }
@@ -96,6 +103,7 @@ export default function ScenesPage() {
   const [zoneMedia, setZoneMedia] = useState<Record<string, string>>({})
   const [name, setName] = useState("")
   const [durationSec, setDurationSec] = useState("10")
+  const [isHouseAd, setIsHouseAd] = useState(false)
   const [search, setSearch] = useState("")
 
   const condoClients = useMemo(
@@ -166,7 +174,10 @@ export default function ScenesPage() {
   const isCondoClient = Boolean(selectedClient?.isCondo)
   const selectedLayout = layouts.find((l) => l.id === layoutId)
   const allLayoutZones = selectedLayout?.zonesJson ?? []
-  const layoutZones = zonesForClient(allLayoutZones, isCondoClient)
+  const layoutZones = zonesForClient(allLayoutZones, {
+    isCondo: isCondoClient,
+    isHouseAd,
+  })
 
   function initZoneMedia(
     zones: LayoutZone[],
@@ -183,16 +194,17 @@ export default function ScenesPage() {
   function openCreate() {
     const firstClient = adsClients[0] ?? condoClients[0] ?? clients[0]
     const firstLayout = layouts[0]
-    const editable = zonesForClient(
-      firstLayout?.zonesJson ?? [],
-      Boolean(firstClient?.isCondo),
-    )
+    const editable = zonesForClient(firstLayout?.zonesJson ?? [], {
+      isCondo: Boolean(firstClient?.isCondo),
+      isHouseAd: false,
+    })
     setEditing(null)
     setClientId(firstClient?.id ?? "")
     setLayoutId(firstLayout?.id ?? "")
     setZoneMedia(initZoneMedia(editable))
     setName("")
     setDurationSec("10")
+    setIsHouseAd(false)
     setOpen(true)
   }
 
@@ -207,15 +219,17 @@ export default function ScenesPage() {
         zonesJson: scene.layout.zonesJson ?? [],
       } as Layout)
     const client = clients.find((c) => c.id === scene.clientId)
-    const editable = zonesForClient(
-      layout.zonesJson ?? [],
-      Boolean(client?.isCondo),
-    )
+    const house = Boolean(scene.isHouseAd)
+    const editable = zonesForClient(layout.zonesJson ?? [], {
+      isCondo: Boolean(client?.isCondo),
+      isHouseAd: house,
+    })
     setEditing(scene)
     setClientId(scene.clientId)
     setLayoutId(scene.layoutId)
     setName(scene.name)
     setDurationSec(String(scene.durationMs / 1000))
+    setIsHouseAd(house)
     setZoneMedia(initZoneMedia(editable, scene.zones))
     setOpen(true)
   }
@@ -224,20 +238,20 @@ export default function ScenesPage() {
     setClientId(nextClientId)
     const client = clients.find((c) => c.id === nextClientId)
     const layout = layouts.find((l) => l.id === layoutId)
-    const editable = zonesForClient(
-      layout?.zonesJson ?? [],
-      Boolean(client?.isCondo),
-    )
+    const editable = zonesForClient(layout?.zonesJson ?? [], {
+      isCondo: Boolean(client?.isCondo),
+      isHouseAd,
+    })
     setZoneMedia(initZoneMedia(editable))
   }
 
   function onLayoutChange(nextLayoutId: string) {
     setLayoutId(nextLayoutId)
     const layout = layouts.find((l) => l.id === nextLayoutId)
-    const editable = zonesForClient(
-      layout?.zonesJson ?? [],
-      isCondoClient,
-    )
+    const editable = zonesForClient(layout?.zonesJson ?? [], {
+      isCondo: isCondoClient,
+      isHouseAd,
+    })
     setZoneMedia(initZoneMedia(editable))
   }
 
@@ -276,6 +290,7 @@ export default function ScenesPage() {
       name,
       layoutId,
       durationMs: Number(durationSec) * 1000,
+      isHouseAd,
       zones,
     }
     try {
@@ -412,6 +427,25 @@ export default function ScenesPage() {
                 </SelectContent>
               </Select>
             </div>
+            {!isCondoClient ? (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isHouseAd}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                    setIsHouseAd(next)
+                    const layout = layouts.find((l) => l.id === layoutId)
+                    const editable = zonesForClient(layout?.zonesJson ?? [], {
+                      isCondo: false,
+                      isHouseAd: next,
+                    })
+                    setZoneMedia(initZoneMedia(editable, editing?.zones))
+                  }}
+                />
+                Cena house (Anuncie AQUI / fill de inventário)
+              </label>
+            ) : null}
 
             <Separator />
 
@@ -560,7 +594,12 @@ export default function ScenesPage() {
                       {section.rows.map((s) => (
                         <TableRow key={s.id}>
                           <TableCell className="font-medium">
-                            {s.name}
+                            <span className="inline-flex items-center gap-2">
+                              {s.name}
+                              {s.isHouseAd ? (
+                                <Badge variant="outline">House</Badge>
+                              ) : null}
+                            </span>
                           </TableCell>
                           <TableCell>{s.client.name}</TableCell>
                           <TableCell>{s.layout.name}</TableCell>

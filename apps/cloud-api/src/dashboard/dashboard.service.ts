@@ -34,7 +34,7 @@ export class DashboardService {
       capacities,
     ] = await Promise.all([
       this.prisma.client.groupBy({
-        by: ['isCondo'],
+        by: ['kind'],
         _count: { _all: true },
       }),
       this.prisma.device.findMany({
@@ -113,7 +113,7 @@ export class DashboardService {
     let clientsCondo = 0;
     let clientsAds = 0;
     for (const row of clientGroups) {
-      if (row.isCondo) clientsCondo += row._count._all;
+      if (row.kind === 'condo') clientsCondo += row._count._all;
       else clientsAds += row._count._all;
     }
 

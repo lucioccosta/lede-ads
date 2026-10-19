@@ -43,22 +43,39 @@ type DeviceGroup = {
   name: string
   client: { name: string }
   _count?: { devices: number }
+  screenCount?: number
+  condoPriceCents?: number
+  pricePerScreenCents?: number
+  impactedPeople?: number
 }
 type Plan = {
   id: string
   name: string
   samplesPerDay: number
-  sampleDurationSec: number
   months: number
   startsAt: string
   endsAt: string | null
   active: boolean
   clientId: string | null
   client: { id: string; name: string } | null
+  monthlyPriceCents?: number
+  totalPriceCents?: number
   deviceGroups?: Array<{
     deviceGroupId: string
-    deviceGroup: { id: string; name: string }
+    deviceGroup: {
+      id: string
+      name: string
+      screenCount?: number
+      condoPriceCents?: number
+    }
   }>
+}
+
+function brlFromCents(cents: number) {
+  return (cents / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  })
 }
 
 export default function PlansPage() {
@@ -71,7 +88,6 @@ export default function PlansPage() {
   const [clientId, setClientId] = useState("none")
   const [name, setName] = useState("")
   const [samplesPerDay, setSamplesPerDay] = useState("100")
-  const [sampleDurationSec, setSampleDurationSec] = useState("10")
   const [months, setMonths] = useState("1")
   const [startsAt, setStartsAt] = useState(
     new Date().toISOString().slice(0, 10),
@@ -96,19 +112,31 @@ export default function PlansPage() {
   const productPreview = useMemo(() => {
     const samples = Number(samplesPerDay) || 0
     const m = Number(months) || 0
-    const dur = Number(sampleDurationSec) || 10
     return {
-      label: `${dur}s × ${samples.toLocaleString("pt-BR")}/dia × ${m} mês(es)`,
+      label: `${samples.toLocaleString("pt-BR")}/dia × ${m} mês(es)`,
       estimate: samples * 30 * m,
     }
-  }, [samplesPerDay, months, sampleDurationSec])
+  }, [samplesPerDay, months])
+
+  const pricePreview = useMemo(() => {
+    const m = Number(months) || 0
+    const lines = groupIds.map((id) => {
+      const g = groups.find((x) => x.id === id)
+      const cents =
+        g?.condoPriceCents ??
+        (g?.screenCount ?? g?._count?.devices ?? 0) *
+          (g?.pricePerScreenCents ?? 0)
+      return { id, name: g?.name ?? id, cents }
+    })
+    const monthly = lines.reduce((s, l) => s + l.cents, 0)
+    return { lines, monthly, total: monthly * m }
+  }, [groupIds, groups, months])
 
   function openCreate() {
     setEditing(null)
     setClientId("none")
     setName("")
     setSamplesPerDay("100")
-    setSampleDurationSec("10")
     setMonths("1")
     setStartsAt(new Date().toISOString().slice(0, 10))
     setGroupIds([])
@@ -120,7 +148,6 @@ export default function PlansPage() {
     setClientId(plan.clientId ?? "none")
     setName(plan.name)
     setSamplesPerDay(String(plan.samplesPerDay))
-    setSampleDurationSec(String(plan.sampleDurationSec))
     setMonths(String(plan.months ?? 1))
     setStartsAt(plan.startsAt.slice(0, 10))
     setGroupIds(plan.deviceGroups?.map((g) => g.deviceGroupId) ?? [])
@@ -143,7 +170,6 @@ export default function PlansPage() {
     const payload = {
       name,
       samplesPerDay: Number(samplesPerDay),
-      sampleDurationSec: Number(sampleDurationSec),
       months: Number(months),
       startsAt: new Date(startsAt).toISOString(),
       groupIds,
@@ -205,8 +231,8 @@ export default function PlansPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Planos</h2>
           <p className="text-muted-foreground">
-            Catálogo: 10s × amostragens/dia × meses. Vincule o anunciante na
-            edição ou ao criar a agenda.
+            Venda por praça (valor do condomínio × meses) + amostragens/dia no
+            grupo. Vincule o anunciante na edição ou na agenda.
           </p>
         </div>
         <Button onClick={openCreate}>Novo plano</Button>
@@ -263,7 +289,7 @@ export default function PlansPage() {
                 required
               />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="samples">Amostr./dia</Label>
                 <Input
@@ -272,17 +298,6 @@ export default function PlansPage() {
                   min={1}
                   value={samplesPerDay}
                   onChange={(e) => setSamplesPerDay(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="duration">Slot (s)</Label>
-                <Input
-                  id="duration"
-                  type="number"
-                  min={1}
-                  value={sampleDurationSec}
-                  onChange={(e) => setSampleDurationSec(e.target.value)}
                   required
                 />
               </div>
@@ -298,6 +313,9 @@ export default function PlansPage() {
                 />
               </div>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Duração do slot (segundos) fica no grupo de telas.
+            </p>
             <p className="text-xs text-muted-foreground">
               {productPreview.label}
               {productPreview.estimate > 0
@@ -322,7 +340,12 @@ export default function PlansPage() {
                     Cadastre grupos em Grupos de telas
                   </p>
                 ) : (
-                  groups.map((g) => (
+                  groups.map((g) => {
+                    const cents =
+                      g.condoPriceCents ??
+                      (g.screenCount ?? g._count?.devices ?? 0) *
+                        (g.pricePerScreenCents ?? 0)
+                    return (
                     <label
                       key={g.id}
                       className="flex cursor-pointer items-center gap-2 text-sm"
@@ -332,17 +355,35 @@ export default function PlansPage() {
                         checked={groupIds.includes(g.id)}
                         onChange={() => toggleGroup(g.id)}
                       />
-                      <span>
+                      <span className="flex-1">
                         {g.name}
                         <span className="text-muted-foreground">
                           {" "}
                           ({g.client.name})
                         </span>
                       </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {brlFromCents(cents)}/mês
+                      </span>
                     </label>
-                  ))
+                    )
+                  })
                 )}
               </div>
+              {pricePreview.lines.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {pricePreview.lines
+                    .map((l) => `${l.name} ${brlFromCents(l.cents)}`)
+                    .join(" + ")}{" "}
+                  ={" "}
+                  <span className="font-medium text-foreground">
+                    {brlFromCents(pricePreview.monthly)}/mês
+                  </span>
+                  {Number(months) > 0
+                    ? ` × ${months} = ${brlFromCents(pricePreview.total)}`
+                    : ""}
+                </p>
+              ) : null}
             </div>
             <Button type="submit" className="w-full">
               Salvar
@@ -367,6 +408,7 @@ export default function PlansPage() {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>Anunciante</TableHead>
+                  <TableHead>Valor</TableHead>
                   <TableHead>Produto</TableHead>
                   <TableHead>Grupos</TableHead>
                   <TableHead>Vigência</TableHead>
@@ -385,9 +427,16 @@ export default function PlansPage() {
                         </span>
                       )}
                     </TableCell>
+                    <TableCell className="text-sm">
+                      <div className="font-medium">
+                        {brlFromCents(p.monthlyPriceCents ?? 0)}/mês
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {brlFromCents(p.totalPriceCents ?? 0)} total
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {p.sampleDurationSec}s × {p.samplesPerDay}/dia ×{" "}
-                      {p.months ?? 1}m
+                      {p.samplesPerDay}/dia × {p.months ?? 1}m
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">

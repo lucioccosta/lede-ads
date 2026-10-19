@@ -5,6 +5,7 @@ import {
   MediaStatus,
   ScreenTypeMode,
   ScheduleChannel,
+  ClientKind,
   DeviceOrientation,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -30,25 +31,25 @@ async function main() {
   // Cliente LEDE (house ads / Anuncie AQUI)
   const ledeClient = await prisma.client.upsert({
     where: { id: 'seed-client-lede' },
-    update: { name: 'LEDE', isCondo: false },
+    update: { name: 'LEDE', kind: ClientKind.network },
     create: {
       id: 'seed-client-lede',
       name: 'LEDE',
       email: 'house@lede.com',
-      isCondo: false,
+      kind: ClientKind.network,
     },
   });
 
   // Anunciante (portal cliente — envia/aprova mídias)
   const advertiser = await prisma.client.upsert({
     where: { id: 'seed-client-demo' },
-    update: { name: 'CLIENTE DEMO', isCondo: false },
+    update: { name: 'CLIENTE DEMO', kind: ClientKind.advertiser },
     create: {
       id: 'seed-client-demo',
       name: 'CLIENTE DEMO',
       email: 'cliente@demo.com',
       document: '00.000.000/0001-00',
-      isCondo: false,
+      kind: ClientKind.advertiser,
     },
   });
 
@@ -67,13 +68,13 @@ async function main() {
   // Condomínio (portal — só troca aviso na cena ativa)
   const condo = await prisma.client.upsert({
     where: { id: 'seed-client-condo' },
-    update: { name: 'CONDOMINIO DEMO', isCondo: true },
+    update: { name: 'CONDOMINIO DEMO', kind: ClientKind.condo },
     create: {
       id: 'seed-client-condo',
       name: 'CONDOMINIO DEMO',
       email: 'condo@demo.com',
       document: '11.111.111/0001-11',
-      isCondo: true,
+      kind: ClientKind.condo,
     },
   });
 
@@ -134,7 +135,6 @@ async function main() {
       clientId: advertiser.id,
       name: 'Plano 2000 amostragens/dia × 3 meses',
       samplesPerDay: 2000,
-      sampleDurationSec: 10,
       months: 3,
       startsAt: planStarts,
       endsAt: planEnds,
@@ -145,7 +145,6 @@ async function main() {
   const layoutFull = await prisma.layout.create({
     data: {
       name: 'Full Bleed TV',
-      screenType: typeTv.slug,
       screenTypeId: typeTv.id,
       width: 1920,
       height: 1080,
@@ -166,7 +165,6 @@ async function main() {
   const layoutElevator = await prisma.layout.create({
     data: {
       name: 'Elevador Retrato Split',
-      screenType: typeElevator.slug,
       screenTypeId: typeElevator.id,
       width: 1080,
       height: 1920,
@@ -335,7 +333,7 @@ async function main() {
       sceneId: sceneFull.id,
       planId: plan.id,
       deviceId: deviceLobby.id,
-      channel: ScheduleChannel.full,
+      channel: ScheduleChannel.takeover,
       priority: 10,
       daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
       startTime: '00:00',
@@ -350,7 +348,7 @@ async function main() {
       sceneId: sceneCondo.id,
       deviceId: deviceElevator.id,
       groupId: deviceGroup.id,
-      channel: ScheduleChannel.condo,
+      channel: ScheduleChannel.condo_notice,
       priority: 20,
       daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
       startTime: '00:00',
@@ -365,7 +363,7 @@ async function main() {
       sceneId: sceneAds.id,
       planId: plan.id,
       groupId: deviceGroup.id,
-      channel: ScheduleChannel.ads,
+      channel: ScheduleChannel.paid_ad,
       priority: 10,
       daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
       startTime: '00:00',

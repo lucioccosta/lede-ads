@@ -45,7 +45,7 @@ type Scene = { id: string; name: string; clientId: string }
 type Plan = { id: string; name: string; clientId: string | null }
 type Device = { id: string; name: string }
 type DeviceGroup = { id: string; name: string }
-type ScheduleChannel = "full" | "condo" | "ads"
+type ScheduleChannel = "takeover" | "condo_notice" | "paid_ad"
 type Schedule = {
   id: string
   name: string
@@ -89,13 +89,13 @@ export default function SchedulesPage() {
   const [clientId, setClientId] = useState("")
   const [sceneId, setSceneId] = useState("")
   const [planId, setPlanId] = useState<string>("none")
-  const [deviceId, setDeviceId] = useState<string>("all")
+  const [deviceId, setDeviceId] = useState<string>("none")
   const [groupId, setGroupId] = useState<string>("none")
   const [priority, setPriority] = useState("10")
   const [startTime, setStartTime] = useState("00:00")
   const [endTime, setEndTime] = useState("23:59")
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
-  const [channel, setChannel] = useState<ScheduleChannel>("full")
+  const [channel, setChannel] = useState<ScheduleChannel>("takeover")
   const [search, setSearch] = useState("")
 
   const condoClients = useMemo(
@@ -115,29 +115,29 @@ export default function SchedulesPage() {
 
   const channelOptions = useMemo(() => {
     const options: { value: ScheduleChannel; label: string }[] = [
-      { value: "full", label: "Full (tela inteira)" },
+      { value: "takeover", label: "Full (tela inteira)" },
     ]
     if (clientIsCondo) {
       options.push({
-        value: "condo",
+        value: "condo_notice",
         label: "Condomínio (área exclusiva)",
       })
     } else {
-      options.push({ value: "ads", label: "Anúncios LEDE" })
+      options.push({ value: "paid_ad", label: "Anúncios LEDE" })
     }
     return options
   }, [clientIsCondo])
 
   function defaultChannelForClient(isCondo: boolean): ScheduleChannel {
-    return isCondo ? "condo" : "full"
+    return isCondo ? "condo_notice" : "takeover"
   }
 
   function sanitizeChannel(
     next: ScheduleChannel,
     isCondo: boolean,
   ): ScheduleChannel {
-    if (isCondo && next === "ads") return "condo"
-    if (!isCondo && next === "condo") return "full"
+    if (isCondo && next === "paid_ad") return "condo_notice"
+    if (!isCondo && next === "condo_notice") return "takeover"
     return next
   }
 
@@ -173,7 +173,7 @@ export default function SchedulesPage() {
       scenes.find((s) => s.clientId === firstClientId)?.id ?? ""
     setSceneId(firstScene)
     setPlanId("none")
-    setDeviceId("all")
+    setDeviceId("none")
     setGroupId("none")
     setPriority("10")
     setStartTime("00:00")
@@ -202,7 +202,7 @@ export default function SchedulesPage() {
     setClientId(schedule.clientId)
     setSceneId(schedule.sceneId)
     setPlanId(schedule.planId ?? "none")
-    setDeviceId(schedule.deviceId ?? "all")
+    setDeviceId(schedule.deviceId ?? "none")
     setGroupId(schedule.groupId ?? "none")
     setPriority(String(schedule.priority))
     setStartTime(schedule.startTime)
@@ -210,7 +210,7 @@ export default function SchedulesPage() {
     setDaysOfWeek(schedule.daysOfWeek)
     const client = clients.find((c) => c.id === schedule.clientId)
     setChannel(
-      sanitizeChannel(schedule.channel ?? "full", !!client?.isCondo),
+      sanitizeChannel(schedule.channel ?? "takeover", !!client?.isCondo),
     )
     setOpen(true)
   }
@@ -242,24 +242,43 @@ export default function SchedulesPage() {
       )
       return
     }
-    if (channel === "ads" && groupId === "none") {
+    if (channel === "paid_ad" && groupId === "none") {
       toast.error("Selecione o grupo de telas para anúncios")
       return
     }
-    if (clientIsCondo && channel === "ads") {
+    if (channel !== "paid_ad") {
+      const hasDevice = deviceId !== "none" && deviceId !== "all"
+      const hasGroup = groupId !== "none"
+      if (hasDevice === hasGroup) {
+        toast.error("Informe exatamente um alvo: tela ou grupo")
+        return
+      }
+    }
+    if (planId !== "none" && (channel !== "paid_ad" || groupId === "none")) {
+      toast.error("Agenda com plano exige canal Anúncios e um grupo do plano")
+      return
+    }
+    if (clientIsCondo && channel === "paid_ad") {
       toast.error("Cliente condomínio não usa o canal Anúncios LEDE")
       return
     }
-    if (!clientIsCondo && channel === "condo") {
+    if (!clientIsCondo && channel === "condo_notice") {
       toast.error("Cliente anunciante não usa o canal Condomínio")
       return
     }
+    const resolvedGroupId = groupId === "none" ? null : groupId
+    const resolvedDeviceId =
+      channel === "paid_ad" || resolvedGroupId
+        ? null
+        : deviceId === "all" || deviceId === "none"
+          ? null
+          : deviceId
     const payload = {
       name,
       sceneId,
       planId: planId === "none" ? null : planId,
-      deviceId: channel === "ads" ? null : deviceId === "all" ? null : deviceId,
-      groupId: groupId === "none" ? null : groupId,
+      deviceId: resolvedDeviceId,
+      groupId: resolvedGroupId,
       channel,
       priority: Number(priority),
       daysOfWeek,
@@ -322,7 +341,7 @@ export default function SchedulesPage() {
     if (fromApi !== undefined) return fromApi
     const fromList = clients.find((c) => c.id === s.clientId)?.isCondo
     if (fromList !== undefined) return fromList
-    return s.channel === "condo"
+    return s.channel === "condo_notice"
   }
 
   const filtered = useMemo(() => {
@@ -423,7 +442,7 @@ export default function SchedulesPage() {
               <Select
                 value={channel}
                 onValueChange={(v) => {
-                  if (v === "full" || v === "condo" || v === "ads") {
+                  if (v === "takeover" || v === "condo_notice" || v === "paid_ad") {
                     setChannel(sanitizeChannel(v, clientIsCondo))
                   }
                 }}
@@ -518,7 +537,7 @@ export default function SchedulesPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {channel === "ads" ? (
+              {channel === "paid_ad" ? (
                 <div className="space-y-2">
                   <Label>Grupo de telas</Label>
                   <Select
@@ -546,20 +565,24 @@ export default function SchedulesPage() {
                 <div className="space-y-2">
                   <Label>Tela</Label>
                   <Select
-                    value={deviceId}
-                    onValueChange={(v) => setDeviceId(v ?? "")}
+                    value={deviceId === "all" ? "none" : deviceId}
+                    onValueChange={(v) => {
+                      const next = v ?? "none"
+                      setDeviceId(next)
+                      if (next !== "none") setGroupId("none")
+                    }}
                     items={{
-                      all: "Todas",
+                      none: "Nenhuma",
                       ...Object.fromEntries(
                         devices.map((d) => [d.id, d.name]),
                       ),
                     }}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue />
+                      <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todas</SelectItem>
+                      <SelectItem value="none">Nenhuma</SelectItem>
                       {devices.map((d) => (
                         <SelectItem key={d.id} value={d.id}>
                           {d.name}
@@ -570,12 +593,16 @@ export default function SchedulesPage() {
                 </div>
               )}
             </div>
-            {channel !== "ads" && (
+            {channel !== "paid_ad" && (
               <div className="space-y-2">
-                <Label>Grupo (opcional)</Label>
+                <Label>Grupo (alternativa à tela)</Label>
                 <Select
                   value={groupId}
-                  onValueChange={(v) => setGroupId(v ?? "none")}
+                  onValueChange={(v) => {
+                    const next = v ?? "none"
+                    setGroupId(next)
+                    if (next !== "none") setDeviceId("none")
+                  }}
                   items={{
                     none: "Nenhum",
                     ...Object.fromEntries(groups.map((g) => [g.id, g.name])),
@@ -676,13 +703,13 @@ export default function SchedulesPage() {
           {(
             [
               {
-                key: "condo",
+                key: "condo_notice",
                 title: "Condomínios",
                 rows: condoSchedules,
                 empty: "Nenhum agendamento de condomínio",
               },
               {
-                key: "ads",
+                key: "paid_ad",
                 title: "Anunciantes ADS",
                 rows: adsSchedules,
                 empty: "Nenhum agendamento de anunciante ADS",
@@ -723,9 +750,9 @@ export default function SchedulesPage() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">
-                              {s.channel === "condo"
+                              {s.channel === "condo_notice"
                                 ? "Condo"
-                                : s.channel === "ads"
+                                : s.channel === "paid_ad"
                                   ? "Ads"
                                   : "Full"}
                             </Badge>

@@ -61,8 +61,7 @@ type ScreenType = {
 type Layout = {
   id: string
   name: string
-  screenType: string
-  screenTypeId: string | null
+  screenTypeId: string
   screenTypeRef?: ScreenType | null
   width: number
   height: number
@@ -556,8 +555,8 @@ export default function LayoutsPage() {
     return items.filter(
       (l) =>
         l.name.toLowerCase().includes(q) ||
-        l.screenType.toLowerCase().includes(q) ||
-        (l.screenTypeRef?.name ?? "").toLowerCase().includes(q),
+        (l.screenTypeRef?.name ?? "").toLowerCase().includes(q) ||
+        (l.screenTypeRef?.slug ?? "").toLowerCase().includes(q),
     )
   }, [items, search])
 
@@ -622,7 +621,7 @@ export default function LayoutsPage() {
   function openEdit(layout: Layout) {
     setEditing(layout)
     setName(layout.name)
-    setScreenTypeId(layout.screenTypeId ?? layout.screenTypeRef?.id ?? "")
+    setScreenTypeId(layout.screenTypeId || layout.screenTypeRef?.id || "")
     setWidth(String(layout.width))
     setHeight(String(layout.height))
     setPreset("custom")
@@ -703,12 +702,14 @@ export default function LayoutsPage() {
       toast.error("Keys das zonas devem ser únicas e preenchidas")
       return
     }
-    const selectedType = screenTypes.find((t) => t.id === screenTypeId)
+    if (!screenTypeId) {
+      toast.error("Selecione o tipo de tela")
+      return
+    }
     const safeZones = clampZonesToContent(zones, canvasW, canvasH)
     const payload = {
       name,
-      screenType: selectedType?.slug ?? "tv",
-      screenTypeId: screenTypeId || undefined,
+      screenTypeId,
       width: canvasW,
       height: canvasH,
       zones: safeZones.map((z) => ({
@@ -1108,7 +1109,7 @@ export default function LayoutsPage() {
                         <TableCell className="font-medium">{l.name}</TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {l.screenTypeRef?.name ?? l.screenType}
+                            {l.screenTypeRef?.name ?? "—"}
                           </Badge>
                         </TableCell>
                         <TableCell>

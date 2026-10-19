@@ -34,6 +34,9 @@ type GroupCapacity = {
   groupName: string
   clientName: string
   deviceCount: number
+  impactedPeople: number
+  pricePerScreenCents: number
+  condoPriceCents: number
   slotsPerScreenDay: number
   capacityPerDay: number
   soldPerDay: number
@@ -50,6 +53,13 @@ type GroupCapacity = {
     months: number
     endsAt: string | null
   }>
+}
+
+function brlFromCents(cents: number) {
+  return (cents / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  })
 }
 
 export default function CapacityPage() {
@@ -141,6 +151,8 @@ export default function CapacityPage() {
                 <TableRow>
                   <TableHead>Grupo</TableHead>
                   <TableHead>Telas</TableHead>
+                  <TableHead>Público</TableHead>
+                  <TableHead>Valor/mês</TableHead>
                   <TableHead>Capacidade/dia</TableHead>
                   <TableHead>Vendido</TableHead>
                   <TableHead>Vago</TableHead>
@@ -159,6 +171,12 @@ export default function CapacityPage() {
                       </div>
                     </TableCell>
                     <TableCell>{g.deviceCount}</TableCell>
+                    <TableCell>
+                      {(g.impactedPeople ?? 0).toLocaleString("pt-BR")}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {brlFromCents(g.condoPriceCents ?? 0)}
+                    </TableCell>
                     <TableCell>{g.capacityPerDay.toLocaleString("pt-BR")}</TableCell>
                     <TableCell>{g.soldPerDay.toLocaleString("pt-BR")}</TableCell>
                     <TableCell>{g.vacantPerDay.toLocaleString("pt-BR")}</TableCell>

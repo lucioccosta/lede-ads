@@ -11,6 +11,18 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
+const CHANNELS = [
+  'takeover',
+  'condo_notice',
+  'paid_ad',
+  // aliases legados aceitos na API
+  'full',
+  'condo',
+  'ads',
+] as const;
+
+export type ScheduleChannelInput = (typeof CHANNELS)[number];
+
 export class CreateScheduleDto {
   @IsString()
   name!: string;
@@ -37,8 +49,8 @@ export class CreateScheduleDto {
   groupId?: string | null;
 
   @IsOptional()
-  @IsIn(['full', 'condo', 'ads'])
-  channel?: 'full' | 'condo' | 'ads';
+  @IsIn([...CHANNELS])
+  channel?: ScheduleChannelInput;
 
   @IsOptional()
   @IsInt()
@@ -92,8 +104,8 @@ export class UpdateScheduleDto {
   groupId?: string | null;
 
   @IsOptional()
-  @IsIn(['full', 'condo', 'ads'])
-  channel?: 'full' | 'condo' | 'ads';
+  @IsIn([...CHANNELS])
+  channel?: ScheduleChannelInput;
 
   @IsOptional()
   @IsInt()

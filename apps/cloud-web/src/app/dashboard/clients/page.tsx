@@ -39,12 +39,15 @@ import { ListToolbar } from "@/components/list-toolbar";
 import { toast } from "sonner";
 import { UsersIcon } from "lucide-react";
 
+type ClientKind = "condo" | "advertiser" | "network";
+
 type Client = {
   id: string;
   name: string;
   email: string | null;
   document: string | null;
   phone: string | null;
+  kind?: ClientKind;
   isCondo: boolean;
   active: boolean;
 };
@@ -75,10 +78,21 @@ function emptyForm() {
     email: "",
     document: "",
     phone: "",
-    isCondo: false,
+    kind: "advertiser" as ClientKind,
     active: true,
   };
 }
+
+function kindOf(client: Client): ClientKind {
+  if (client.kind) return client.kind;
+  return client.isCondo ? "condo" : "advertiser";
+}
+
+const kindLabel: Record<ClientKind, string> = {
+  condo: "Condomínio",
+  advertiser: "Anunciante",
+  network: "Rede LEDE",
+};
 
 function emptyUserForm() {
   return {
@@ -145,7 +159,7 @@ export default function ClientsPage() {
       email: client.email ?? "",
       document: client.document ?? "",
       phone: client.phone ?? "",
-      isCondo: client.isCondo,
+      kind: kindOf(client),
       active: client.active,
     });
     setOpen(true);
@@ -159,7 +173,7 @@ export default function ClientsPage() {
       email: form.email.trim() || null,
       document: form.document.trim() || null,
       phone: form.phone.trim() || null,
-      isCondo: form.isCondo,
+      kind: form.kind,
       ...(editing ? { active: form.active } : {}),
     };
     try {
@@ -177,7 +191,7 @@ export default function ClientsPage() {
             email: payload.email ?? undefined,
             document: payload.document ?? undefined,
             phone: payload.phone ?? undefined,
-            isCondo: payload.isCondo,
+            kind: payload.kind,
           }),
         });
         toast.success("Cliente criado");
@@ -380,22 +394,36 @@ export default function ClientsPage() {
                 }
               />
             </div>
-            <label className="flex items-start gap-3 rounded-lg border p-3">
-              <Checkbox
-                checked={form.isCondo}
-                onCheckedChange={(v) =>
-                  setForm((f) => ({ ...f, isCondo: v === true }))
+            <div className="space-y-2">
+              <Label>Tipo de cliente</Label>
+              <Select
+                value={form.kind}
+                onValueChange={(v) =>
+                  setForm((f) => ({
+                    ...f,
+                    kind: (v as ClientKind) ?? "advertiser",
+                  }))
                 }
-                className="mt-0.5"
-              />
-              <div>
-                <p className="text-sm font-medium">É condomínio</p>
-                <p className="text-xs text-muted-foreground">
-                  Libera portal para enviar mídias e gerenciar cenas/agendas
-                  próprias (área exclusiva)
-                </p>
-              </div>
-            </label>
+                items={{
+                  condo: "Condomínio (inventário)",
+                  advertiser: "Anunciante",
+                  network: "Rede LEDE (house)",
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="condo">Condomínio (inventário)</SelectItem>
+                  <SelectItem value="advertiser">Anunciante</SelectItem>
+                  <SelectItem value="network">Rede LEDE (house)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Condomínio possui grupos de telas; anunciante compra planos;
+                rede LEDE hospeda house ads.
+              </p>
+            </div>
             {editing && (
               <div className="space-y-2">
                 <Label>Status</Label>
@@ -685,8 +713,12 @@ export default function ClientsPage() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell>
-                        <Badge variant={c.isCondo ? "default" : "outline"}>
-                          {c.isCondo ? "Condomínio" : "Anunciante"}
+                        <Badge
+                          variant={
+                            kindOf(c) === "condo" ? "default" : "outline"
+                          }
+                        >
+                          {kindLabel[kindOf(c)]}
                         </Badge>
                       </TableCell>
                       <TableCell>{c.document ?? "—"}</TableCell>

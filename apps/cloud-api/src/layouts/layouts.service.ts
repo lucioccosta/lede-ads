@@ -52,20 +52,20 @@ export class LayoutsService {
     return layout;
   }
 
+  private async requireScreenType(screenTypeId: string) {
+    const st = await this.prisma.screenType.findUnique({
+      where: { id: screenTypeId },
+    });
+    if (!st) throw new NotFoundException('Tipo de tela não encontrado');
+    return st;
+  }
+
   async create(dto: CreateLayoutDto) {
-    let screenTypeLabel = dto.screenType;
-    if (dto.screenTypeId) {
-      const st = await this.prisma.screenType.findUnique({
-        where: { id: dto.screenTypeId },
-      });
-      if (!st) throw new NotFoundException('Tipo de tela não encontrado');
-      screenTypeLabel = st.slug;
-    }
+    await this.requireScreenType(dto.screenTypeId);
     return this.prisma.layout.create({
       data: {
         name: dto.name,
-        screenType: screenTypeLabel,
-        screenTypeId: dto.screenTypeId ?? null,
+        screenTypeId: dto.screenTypeId,
         width: dto.width,
         height: dto.height,
         zonesJson: normalizeZones(dto.zones) as unknown as Prisma.InputJsonValue,
@@ -76,21 +76,14 @@ export class LayoutsService {
 
   async update(id: string, dto: UpdateLayoutDto) {
     await this.findOne(id);
-    let screenTypeLabel = dto.screenType;
     if (dto.screenTypeId) {
-      const st = await this.prisma.screenType.findUnique({
-        where: { id: dto.screenTypeId },
-      });
-      if (!st) throw new NotFoundException('Tipo de tela não encontrado');
-      screenTypeLabel = st.slug;
+      await this.requireScreenType(dto.screenTypeId);
     }
     return this.prisma.layout.update({
       where: { id },
       data: {
         name: dto.name,
-        screenType: screenTypeLabel,
-        screenTypeId:
-          dto.screenTypeId === undefined ? undefined : dto.screenTypeId,
+        screenTypeId: dto.screenTypeId,
         width: dto.width,
         height: dto.height,
         zonesJson: dto.zones

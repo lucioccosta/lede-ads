@@ -35,6 +35,10 @@ export class CreateSceneDto {
   durationMs?: number;
 
   @IsOptional()
+  @IsBoolean()
+  isHouseAd?: boolean;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SceneZoneInput)
@@ -59,6 +63,10 @@ export class UpdateSceneDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isHouseAd?: boolean;
 
   @IsOptional()
   @IsArray()

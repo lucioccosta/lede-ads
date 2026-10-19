@@ -62,7 +62,7 @@ export class ScenesController {
     const schedule = await this.prisma.schedule.findFirst({
       where: {
         clientId: client.id,
-        channel: 'condo',
+        channel: 'condo_notice',
         active: true,
         scene: { active: true },
       },
@@ -131,7 +131,7 @@ export class ScenesController {
       const active = await this.prisma.schedule.findFirst({
         where: {
           clientId: client.id,
-          channel: 'condo',
+          channel: 'condo_notice',
           active: true,
           sceneId: id,
           scene: { active: true },

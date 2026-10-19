@@ -9,6 +9,26 @@ import {
   UpdateDeviceGroupDto,
 } from './dto/device-group.dto';
 import { CapacityService } from '../capacity/capacity.service';
+import { clientKindToIsCondo, isCondoKind } from '../common/client-kind';
+import { assertClientScreenType } from '../common/condo-access';
+
+function withPricing<
+  T extends {
+    devices?: unknown[];
+    _count?: { devices?: number };
+    impactedPeople: number;
+    pricePerScreenCents: number;
+  },
+>(group: T) {
+  const screenCount =
+    group._count?.devices ?? group.devices?.length ?? 0;
+  const condoPriceCents = screenCount * group.pricePerScreenCents;
+  return {
+    ...group,
+    screenCount,
+    condoPriceCents,
+  };
+}
 
 @Injectable()
 export class DeviceGroupsService {
@@ -17,10 +37,10 @@ export class DeviceGroupsService {
     private readonly capacity: CapacityService,
   ) {}
 
-  findAll() {
-    return this.prisma.deviceGroup.findMany({
+  async findAll() {
+    const groups = await this.prisma.deviceGroup.findMany({
       include: {
-        client: { select: { id: true, name: true, isCondo: true } },
+        client: { select: { id: true, name: true, kind: true } },
         houseScene: { select: { id: true, name: true } },
         devices: {
           select: { id: true, name: true, locationLabel: true, status: true },
@@ -30,13 +50,19 @@ export class DeviceGroupsService {
       },
       orderBy: { name: 'asc' },
     });
+    return groups.map((g) =>
+      withPricing({
+        ...g,
+        client: { ...g.client, isCondo: clientKindToIsCondo(g.client.kind) },
+      }),
+    );
   }
 
   async findOne(id: string) {
     const group = await this.prisma.deviceGroup.findUnique({
       where: { id },
       include: {
-        client: { select: { id: true, name: true, isCondo: true } },
+        client: { select: { id: true, name: true, kind: true } },
         houseScene: { select: { id: true, name: true, isHouseAd: true } },
         devices: {
           select: {
@@ -55,11 +81,21 @@ export class DeviceGroupsService {
             },
           },
         },
+        _count: { select: { devices: true, plans: true, schedules: true } },
       },
     });
     if (!group) throw new NotFoundException('Grupo não encontrado');
     const capacity = await this.capacity.getGroupCapacity(id);
-    return { ...group, capacity };
+    return {
+      ...withPricing({
+        ...group,
+        client: {
+          ...group.client,
+          isCondo: clientKindToIsCondo(group.client.kind),
+        },
+      }),
+      capacity,
+    };
   }
 
   async create(dto: CreateDeviceGroupDto) {
@@ -67,7 +103,7 @@ export class DeviceGroupsService {
       where: { id: dto.clientId },
     });
     if (!client) throw new NotFoundException('Cliente não encontrado');
-    if (!client.isCondo) {
+    if (!isCondoKind(client.kind)) {
       throw new BadRequestException(
         'Grupo de telas deve pertencer a um cliente condomínio',
       );
@@ -79,6 +115,8 @@ export class DeviceGroupsService {
         clientId: dto.clientId,
         viewingHoursPerDay: dto.viewingHoursPerDay ?? 18,
         sampleDurationSec: dto.sampleDurationSec ?? 10,
+        impactedPeople: dto.impactedPeople ?? 0,
+        pricePerScreenCents: dto.pricePerScreenCents ?? 0,
         houseSceneId: dto.houseSceneId ?? null,
       },
     });
@@ -97,7 +135,7 @@ export class DeviceGroupsService {
       const client = await this.prisma.client.findUnique({
         where: { id: dto.clientId },
       });
-      if (!client?.isCondo) {
+      if (!client || !isCondoKind(client.kind)) {
         throw new BadRequestException(
           'Grupo de telas deve pertencer a um cliente condomínio',
         );
@@ -112,6 +150,8 @@ export class DeviceGroupsService {
         active: dto.active,
         viewingHoursPerDay: dto.viewingHoursPerDay,
         sampleDurationSec: dto.sampleDurationSec,
+        impactedPeople: dto.impactedPeople,
+        pricePerScreenCents: dto.pricePerScreenCents,
         houseSceneId:
           dto.houseSceneId === undefined ? undefined : dto.houseSceneId,
       },
@@ -159,6 +199,12 @@ export class DeviceGroupsService {
           `Tela "${d.name}" pertence a outro cliente`,
         );
       }
+      if (!d.screenTypeId) {
+        throw new BadRequestException(
+          `Tela "${d.name}" sem tipo de tela — defina o tipo antes de vincular ao grupo`,
+        );
+      }
+      await assertClientScreenType(this.prisma, clientId, d.screenTypeId);
     }
     await this.prisma.device.updateMany({
       where: { id: { in: deviceIds } },

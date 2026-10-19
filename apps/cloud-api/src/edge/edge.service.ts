@@ -238,7 +238,6 @@ export class EdgeService {
         active: true,
         OR: [
           { deviceId: device.id },
-          { deviceId: null, groupId: null },
           ...(device.groupId ? [{ groupId: device.groupId }] : []),
         ],
       },
@@ -260,27 +259,48 @@ export class EdgeService {
       ),
     ];
 
-    const popsToday =
-      planIds.length === 0
-        ? []
-        : await this.prisma.proofOfPlay.findMany({
-            where: {
-              deviceId: device.id,
-              startedAt: { gte: dayStart, lt: dayEnd },
-              scene: {
-                schedules: { some: { planId: { in: planIds } } },
-              },
-            },
-            select: { sceneId: true, mediaId: true },
-          });
-
+    // Cota por plano no grupo (todas as telas), alinhada à capacity.
     const popCountByPlan = new Map<string, number>();
-    for (const planId of planIds) {
-      const sceneIds = new Set(
-        schedules.filter((s) => s.planId === planId).map((s) => s.sceneId),
+    if (planIds.length > 0) {
+      const groupDeviceIds = device.groupId
+        ? (
+            await this.prisma.device.findMany({
+              where: { groupId: device.groupId },
+              select: { id: true },
+            })
+          ).map((d) => d.id)
+        : [device.id];
+
+      const counts = await Promise.all(
+        planIds.map(async (planId) => {
+          const byPlanId = await this.prisma.proofOfPlay.count({
+            where: {
+              planId,
+              deviceId: { in: groupDeviceIds },
+              startedAt: { gte: dayStart, lt: dayEnd },
+            },
+          });
+          if (byPlanId > 0) return [planId, byPlanId] as const;
+
+          // Legacy: PoP sem planId — conta por cenas do plano no grupo
+          const sceneIds = schedules
+            .filter((s) => s.planId === planId)
+            .map((s) => s.sceneId);
+          if (sceneIds.length === 0) return [planId, 0] as const;
+          const legacy = await this.prisma.proofOfPlay.count({
+            where: {
+              planId: null,
+              deviceId: { in: groupDeviceIds },
+              sceneId: { in: sceneIds },
+              startedAt: { gte: dayStart, lt: dayEnd },
+            },
+          });
+          return [planId, legacy] as const;
+        }),
       );
-      const count = popsToday.filter((p) => sceneIds.has(p.sceneId)).length;
-      popCountByPlan.set(planId, count);
+      for (const [planId, count] of counts) {
+        popCountByPlan.set(planId, count);
+      }
     }
 
     const active = schedules.filter((s) => {
@@ -306,16 +326,9 @@ export class EdgeService {
       scenes = await this.buildCondoSplitPlaylist(device, active);
     } else {
       scenes = active
-        .filter((s) => s.channel === ScheduleChannel.full)
+        .filter((s) => s.channel === ScheduleChannel.takeover)
         .map((s) => this.scheduleToScene(s))
         .filter((s): s is SyncScene => s != null);
-
-      // Backward compat: if nothing with channel=full, use any active
-      if (scenes.length === 0) {
-        scenes = active
-          .map((s) => this.scheduleToScene(s))
-          .filter((s): s is SyncScene => s != null);
-      }
     }
 
     return {
@@ -437,25 +450,19 @@ export class EdgeService {
   ): Promise<SyncScene[]> {
     const condoSchedule = active.find(
       (s) =>
-        s.channel === ScheduleChannel.condo &&
+        s.channel === ScheduleChannel.condo_notice &&
         !!device.clientId &&
         s.clientId === device.clientId,
     );
 
     const paidAds = active.filter(
       (s) =>
-        s.channel === ScheduleChannel.ads &&
+        s.channel === ScheduleChannel.paid_ad &&
         !s.scene.isHouseAd &&
         (device.groupId
           ? s.groupId === device.groupId || s.deviceId === device.id
-          : s.deviceId === device.id || s.deviceId === null),
+          : s.deviceId === device.id),
     );
-
-    // Fallback full-channel as ads when no ads schedules
-    const fullFallback =
-      paidAds.length === 0
-        ? active.find((s) => s.channel === ScheduleChannel.full)
-        : undefined;
 
     let vacantRatio = 0;
     if (device.groupId) {
@@ -466,7 +473,7 @@ export class EdgeService {
       } catch {
         vacantRatio = paidAds.length === 0 ? 1 : 0;
       }
-    } else if (paidAds.length === 0 && !fullFallback) {
+    } else if (paidAds.length === 0) {
       vacantRatio = 1;
     }
 
@@ -484,20 +491,12 @@ export class EdgeService {
         })
       : null;
 
-    let houseScene =
-      group?.houseScene ??
-      (await this.prisma.scene.findFirst({
-        where: { isHouseAd: true, active: true },
-        include: {
-          zones: { include: { media: true } },
-          layout: true,
-        },
-      }));
+    // House fill só via DeviceGroup.houseSceneId (sem fallback global)
+    const houseScene = group?.houseScene ?? null;
 
     const layoutSource =
       condoSchedule?.scene.layout ??
       paidAds[0]?.scene.layout ??
-      fullFallback?.scene.layout ??
       houseScene?.layout ??
       (device.screenTypeId
         ? await this.prisma.layout.findFirst({
@@ -513,11 +512,7 @@ export class EdgeService {
       ? this.buildZonesFromSchedule(condoSchedule, 'condo')
       : this.emptyZones(layoutZones, 'condo');
 
-    const paidEntries = paidAds.length
-      ? paidAds
-      : fullFallback
-        ? [fullFallback]
-        : [];
+    const paidEntries = paidAds;
 
     const houseAdsZones = houseScene
       ? this.buildZonesFromSchedule(
@@ -534,20 +529,21 @@ export class EdgeService {
 
     const pattern = this.buildHouseFillPattern(
       paidEntries.length,
-      paidEntries.length === 0 ? 1 : vacantRatio,
+      paidEntries.length === 0 && houseScene ? 1 : vacantRatio,
     );
 
     const scenes: SyncScene[] = [];
     for (const slot of pattern) {
       if (slot.type === 'house') {
+        if (!houseScene) continue;
         const merged = this.mergeCondoAdsScene({
           condoZones,
           adsZones: houseAdsZones,
           layout: layoutSource,
-          sceneId: houseScene?.id ?? `house-${device.id}`,
-          name: houseScene?.name ?? 'Anuncie AQUI',
-          durationMs: houseScene?.durationMs ?? 10000,
-          layoutId: houseScene?.layoutId ?? layoutSource.id,
+          sceneId: houseScene.id,
+          name: houseScene.name,
+          durationMs: houseScene.durationMs ?? 10000,
+          layoutId: houseScene.layoutId ?? layoutSource.id,
         });
         if (merged) scenes.push(merged);
         continue;
@@ -556,26 +552,7 @@ export class EdgeService {
       const adsSchedule = paidEntries[slot.index];
       if (!adsSchedule) continue;
 
-      let adsZones = this.buildZonesFromSchedule(
-        adsSchedule,
-        adsSchedule.channel === ScheduleChannel.full ? 'ads' : 'ads',
-      );
-      if (
-        adsSchedule.channel === ScheduleChannel.full &&
-        !adsZones.some((z) => z.media)
-      ) {
-        const layoutZs = this.parseLayoutZones(
-          adsSchedule.scene.layout.zonesJson,
-        );
-        const nonCondo = new Set(
-          layoutZs
-            .filter((z) => (z.role ?? 'full') !== 'condo')
-            .map((z) => z.key),
-        );
-        adsZones = this.buildZonesFromSchedule(adsSchedule).filter((z) =>
-          nonCondo.has(z.key),
-        );
-      }
+      const adsZones = this.buildZonesFromSchedule(adsSchedule, 'ads');
 
       const merged = this.mergeCondoAdsScene({
         condoZones,
@@ -735,11 +712,26 @@ export class EdgeService {
     });
     if (!scene) return { ok: true, skipped: true };
 
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
+        active: true,
+        sceneId,
+        OR: [
+          { deviceId: device.id },
+          ...(device.groupId ? [{ groupId: device.groupId }] : []),
+        ],
+      },
+      select: { id: true, planId: true },
+      orderBy: { priority: 'desc' },
+    });
+
     await this.prisma.proofOfPlay.create({
       data: {
         deviceId: device.id,
         sceneId,
         mediaId: dto.mediaId,
+        planId: schedule?.planId ?? null,
+        scheduleId: schedule?.id ?? null,
         startedAt: new Date(dto.startedAt),
         endedAt: new Date(dto.endedAt),
         checksum: dto.checksum,

@@ -1,14 +1,14 @@
 # Grupos de telas, capacidade e rodízio de anúncios
 
-Documentação do inventário comercial LEDE Ads: grupos por condomínio, planos (`10s × amostragens/dia × meses`), capacidade diária e playlist do Edge.
+Documentação do inventário comercial LEDE Ads: grupos por condomínio, planos (`amostragens/dia × meses`), capacidade diária e playlist do Edge.
 
 ## Conceitos
 
 | Conceito | Descrição |
 |----------|-----------|
-| **DeviceGroup** | Grupo de telas de **um condomínio** (`Client.isCondo`). Anunciantes compram espaço nesse grupo. |
+| **DeviceGroup** | Grupo de telas de **um condomínio** (`Client.isCondo`). Anunciantes compram espaço nesse grupo. Define `sampleDurationSec` (duração do slot). |
 | **Capacidade/dia** | `(viewingHoursPerDay × 3600 / sampleDurationSec) × N_telas`. Defaults: **18h** e **10s** → **6480 × N** amostragens/dia. |
-| **Plano** | Contrato do anunciante: `samplesPerDay`, `sampleDurationSec` (10), `months`, vigência `startsAt`/`endsAt`, ligado a um ou mais grupos via `PlanDeviceGroup`. |
+| **Plano** | Contrato: `samplesPerDay`, `months`, vigência `startsAt`/`endsAt`, ligado a um ou mais grupos via `PlanDeviceGroup`. Duração do slot vem do grupo. |
 | **Schedule ads** | Agenda com `channel=ads` e `groupId` (expande para todas as telas do grupo no sync). |
 | **House ad** | Cena `isHouseAd` (“Anuncie AQUI”) — preenche **slots vagos** (inventário não vendido) e o restante do dia após cotas esgotadas. Sem plano/cota. |
 
@@ -35,7 +35,7 @@ vacantPerDay      = max(0, capacityPerDay - soldPerDay)
 ```
 
 - Criar/editar plano **rejeita overbook** se `sold + novo > capacity` em qualquer grupo alvo.
-- Produto na UI: **`10s × samplesPerDay × months`** (estimativa de amostragens ≈ `samplesPerDay × 30 × months`).
+- Produto na UI: **`samplesPerDay × months`** (estimativa ≈ `samplesPerDay × 30 × months`; slot em segundos vem do `DeviceGroup`).
 
 ### Dashboard
 

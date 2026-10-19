@@ -11,7 +11,7 @@ export class HistoryService {
       where: clientId ? { clientId } : undefined,
       include: {
         user: { select: { id: true, name: true, email: true } },
-        client: { select: { id: true, name: true, isCondo: true } },
+        client: { select: { id: true, name: true, kind: true } },
       },
       orderBy: { createdAt: 'desc' },
       take,

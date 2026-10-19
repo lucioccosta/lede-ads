@@ -42,11 +42,7 @@ export class CreateLayoutDto {
   name!: string;
 
   @IsString()
-  screenType!: string;
-
-  @IsOptional()
-  @IsString()
-  screenTypeId?: string;
+  screenTypeId!: string;
 
   @IsInt()
   @Min(1)
@@ -71,11 +67,7 @@ export class UpdateLayoutDto {
 
   @IsOptional()
   @IsString()
-  screenType?: string;
-
-  @IsOptional()
-  @IsString()
-  screenTypeId?: string | null;
+  screenTypeId?: string;
 
   @IsOptional()
   @IsInt()

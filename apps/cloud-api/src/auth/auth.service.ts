@@ -5,10 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ClientKind } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { ChangePasswordDto, LoginDto } from './dto/auth.dto';
+import { clientKindToIsCondo } from '../common/client-kind';
 
 @Injectable()
 export class AuthService {
@@ -21,7 +23,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
-      include: { client: { select: { isCondo: true } } },
+      include: { client: { select: { kind: true } } },
     });
     if (!user || !user.active) {
       throw new UnauthorizedException('Credenciais inválidas');
@@ -43,12 +45,19 @@ export class AuthService {
         role: true,
         clientId: true,
         active: true,
-        client: { select: { isCondo: true, name: true } },
+        client: { select: { kind: true, name: true } },
       },
     });
     if (!user) return null;
     return {
       ...user,
+      client: user.client
+        ? {
+            ...user.client,
+            isCondo: clientKindToIsCondo(user.client.kind),
+          }
+        : null,
+      isCondo: user.client ? clientKindToIsCondo(user.client.kind) : false,
       permissions: await this.permissions.forRole(user.role),
     };
   }
@@ -81,7 +90,7 @@ export class AuthService {
     name: string;
     role: string;
     clientId: string | null;
-    client?: { isCondo: boolean } | null;
+    client?: { kind: ClientKind } | null;
   }) {
     const payload = {
       sub: user.id,
@@ -97,7 +106,8 @@ export class AuthService {
         name: user.name,
         role: user.role,
         clientId: user.clientId,
-        isCondo: user.client?.isCondo ?? false,
+        kind: user.client?.kind ?? null,
+        isCondo: user.client ? clientKindToIsCondo(user.client.kind) : false,
       },
     };
   }

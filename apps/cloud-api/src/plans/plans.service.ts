@@ -14,11 +14,61 @@ const planInclude = {
   deviceGroups: {
     include: {
       deviceGroup: {
-        select: { id: true, name: true, clientId: true },
+        select: {
+          id: true,
+          name: true,
+          clientId: true,
+          impactedPeople: true,
+          pricePerScreenCents: true,
+          _count: { select: { devices: true } },
+        },
       },
     },
   },
 } as const;
+
+type PlanWithGroups = Awaited<
+  ReturnType<PrismaService['plan']['findMany']>
+>[number] & {
+  deviceGroups: Array<{
+    deviceGroupId: string;
+    deviceGroup: {
+      id: string;
+      name: string;
+      clientId: string;
+      impactedPeople: number;
+      pricePerScreenCents: number;
+      _count: { devices: number };
+    };
+  }>;
+  months: number;
+};
+
+function withQuote<T extends PlanWithGroups>(plan: T) {
+  const groups = plan.deviceGroups.map((link) => {
+    const screenCount = link.deviceGroup._count.devices;
+    const condoPriceCents =
+      screenCount * link.deviceGroup.pricePerScreenCents;
+    return {
+      ...link,
+      deviceGroup: {
+        ...link.deviceGroup,
+        screenCount,
+        condoPriceCents,
+      },
+    };
+  });
+  const monthlyPriceCents = groups.reduce(
+    (sum, g) => sum + g.deviceGroup.condoPriceCents,
+    0,
+  );
+  return {
+    ...plan,
+    deviceGroups: groups,
+    monthlyPriceCents,
+    totalPriceCents: monthlyPriceCents * plan.months,
+  };
+}
 
 @Injectable()
 export class PlansService {
@@ -27,12 +77,13 @@ export class PlansService {
     private readonly capacity: CapacityService,
   ) {}
 
-  findAll(clientId?: string) {
-    return this.prisma.plan.findMany({
+  async findAll(clientId?: string) {
+    const plans = await this.prisma.plan.findMany({
       where: clientId ? { clientId } : undefined,
       include: planInclude,
       orderBy: { createdAt: 'desc' },
     });
+    return plans.map((p) => withQuote(p as PlanWithGroups));
   }
 
   async findOne(id: string) {
@@ -41,27 +92,24 @@ export class PlansService {
       include: planInclude,
     });
     if (!plan) throw new NotFoundException('Plano não encontrado');
-    return plan;
+    return withQuote(plan as PlanWithGroups);
   }
 
   async create(dto: CreatePlanDto) {
     const months = dto.months ?? 1;
     const startsAt = new Date(dto.startsAt);
-    const endsAt = dto.endsAt
-      ? new Date(dto.endsAt)
-      : addMonths(startsAt, months);
+    const endsAt = addMonths(startsAt, months);
     const groupIds = dto.groupIds ?? [];
 
     if (groupIds.length) {
       await this.capacity.assertCanBook(groupIds, dto.samplesPerDay);
     }
 
-    return this.prisma.plan.create({
+    const created = await this.prisma.plan.create({
       data: {
         clientId: dto.clientId ?? null,
         name: dto.name,
         samplesPerDay: dto.samplesPerDay,
-        sampleDurationSec: dto.sampleDurationSec ?? 10,
         months,
         startsAt,
         endsAt,
@@ -73,6 +121,7 @@ export class PlansService {
       },
       include: planInclude,
     });
+    return withQuote(created as PlanWithGroups);
   }
 
   async update(id: string, dto: UpdatePlanDto) {
@@ -80,20 +129,11 @@ export class PlansService {
     const samplesPerDay = dto.samplesPerDay ?? existing.samplesPerDay;
     const months = dto.months ?? existing.months;
     const startsAt = dto.startsAt ? new Date(dto.startsAt) : existing.startsAt;
-    let endsAt =
-      dto.endsAt !== undefined
-        ? dto.endsAt
-          ? new Date(dto.endsAt)
-          : null
-        : existing.endsAt;
-
-    if (dto.months !== undefined && dto.endsAt === undefined) {
-      endsAt = addMonths(startsAt, months);
-    }
+    // Sempre deriva endsAt de months + startsAt
+    const endsAt = addMonths(startsAt, months);
 
     const groupIds =
-      dto.groupIds ??
-      existing.deviceGroups.map((g) => g.deviceGroupId);
+      dto.groupIds ?? existing.deviceGroups.map((g) => g.deviceGroupId);
 
     if (groupIds.length && (dto.samplesPerDay !== undefined || dto.groupIds)) {
       await this.capacity.assertCanBook(groupIds, samplesPerDay, id);
@@ -111,20 +151,20 @@ export class PlansService {
       }
     }
 
-    return this.prisma.plan.update({
+    const updated = await this.prisma.plan.update({
       where: { id },
       data: {
         ...(dto.clientId !== undefined ? { clientId: dto.clientId } : {}),
         name: dto.name,
         samplesPerDay: dto.samplesPerDay,
-        sampleDurationSec: dto.sampleDurationSec,
-        months: dto.months,
-        startsAt: dto.startsAt ? startsAt : undefined,
-        endsAt: dto.endsAt !== undefined || dto.months !== undefined ? endsAt : undefined,
+        months,
+        startsAt,
+        endsAt,
         active: dto.active,
       },
       include: planInclude,
     });
+    return withQuote(updated as PlanWithGroups);
   }
 
   async remove(id: string) {
