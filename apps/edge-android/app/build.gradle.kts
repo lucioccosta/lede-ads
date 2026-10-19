@@ -57,8 +57,8 @@ android {
         // Aquario STV-2000 Plus = Android 10 (API 29), ARM Cortex-A53
         minSdk = 29
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.5.15"
+        versionCode = 34
+        versionName = "0.5.16"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
