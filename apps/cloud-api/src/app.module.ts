@@ -20,6 +20,7 @@ import { CapacityModule } from './capacity/capacity.module';
 import { DeviceGroupsModule } from './device-groups/device-groups.module';
 import { TickerModule } from './ticker/ticker.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { PermissionsModule } from './permissions/permissions.module';
     StorageModule,
     AuthModule,
     PermissionsModule,
+    DashboardModule,
     ClientsModule,
     UsersModule,
     CapacityModule,

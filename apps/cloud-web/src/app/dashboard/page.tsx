@@ -29,60 +29,7 @@ import {
 } from "@/components/mini-charts"
 import { cn } from "@/lib/utils"
 
-type Client = { id: string; name: string; isCondo?: boolean }
-type Device = {
-  id: string
-  name: string
-  computedStatus: string
-  updateAvailable?: boolean
-  appVersion?: string | null
-  lastHeartbeatAt?: string | null
-  client?: { name: string } | null
-}
-type Media = {
-  id: string
-  name: string
-  status: string
-  client?: { name: string } | null
-}
-type Schedule = { id: string; name: string; active: boolean; channel?: string }
-type Scene = { id: string; name: string; active: boolean }
-type Plan = {
-  id: string
-  name: string
-  active: boolean
-  client?: { name: string } | null
-}
-type GroupCapacity = {
-  groupId: string
-  groupName: string
-  clientName: string
-  occupancyPct: number
-  full: boolean
-  vacantPerDay: number
-}
-type Report = {
-  totalPlays: number
-  byDay?: Record<string, number>
-  recent: Array<{
-    id: string
-    startedAt: string
-    media: { name: string }
-    device: { name: string }
-  }>
-}
-type ChangeLog = {
-  id: string
-  action: string
-  summary: string
-  createdAt: string
-  user: { name: string } | null
-  client: { name: string } | null
-}
-
-type DayPoint = { label: string; value: number; key: string }
-
-type Stats = {
+type Overview = {
   clientsTotal: number
   clientsCondo: number
   clientsAds: number
@@ -90,7 +37,6 @@ type Stats = {
   devicesOffline: number
   devicesPairing: number
   devicesTotal: number
-  updatesAvailable: number
   pendingMedia: number
   approvedMedia: number
   schedulesActive: number
@@ -104,15 +50,36 @@ type Stats = {
   capacityAvgOccupancy: number
   capacityTop: Array<{ label: string; pct: number; full?: boolean }>
   plays7d: number
-  playsByDay: DayPoint[]
-  playsToday: number
-  playsYesterday: number
-  onlineHistory: number[]
-  offlineDevices: Device[]
-  pendingMediaList: Media[]
-  recentPlays: Report["recent"]
-  recentHistory: ChangeLog[]
+  playsByDay: Record<string, number>
+  offlineDevices: Array<{
+    id: string
+    name: string
+    lastHeartbeatAt: string | null
+    client: { name: string } | null
+  }>
+  pendingMediaList: Array<{
+    id: string
+    name: string
+    status: string
+    client: { name: string } | null
+  }>
+  recentPlays: Array<{
+    id: string
+    startedAt: string
+    media: { name: string }
+    device: { name: string }
+  }>
+  recentHistory: Array<{
+    id: string
+    action: string
+    summary: string
+    createdAt: string
+    user: { name: string } | null
+    client: { name: string } | null
+  }>
 }
+
+type DayPoint = { label: string; value: number; key: string }
 
 const ONLINE_HISTORY_KEY = "lede.dashboard.onlineHistory"
 const ONLINE_HISTORY_MAX = 24
@@ -183,116 +150,39 @@ function pushOnlineHistory(online: number): number[] {
   return next
 }
 
-async function settled<T>(promise: Promise<T>, fallback: T): Promise<T> {
-  try {
-    return await promise
-  } catch {
-    return fallback
-  }
-}
-
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null)
+  const [stats, setStats] = useState<Overview | null>(null)
+  const [playsByDay, setPlaysByDay] = useState<DayPoint[]>([])
+  const [onlineHistory, setOnlineHistory] = useState<number[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
-      const [
-        clients,
-        devices,
-        media,
-        schedules,
-        scenes,
-        plans,
-        capacity,
-        report,
-        history,
-      ] = await Promise.all([
-        settled(api<Client[]>("/clients"), []),
-        settled(api<Device[]>("/devices/monitoring"), []),
-        settled(api<Media[]>("/media"), []),
-        settled(api<Schedule[]>("/schedules"), []),
-        settled(api<Scene[]>("/scenes"), []),
-        settled(api<Plan[]>("/plans"), []),
-        settled(api<GroupCapacity[]>("/capacity"), []),
-        settled(api<Report>("/reports/sampling"), {
-          totalPlays: 0,
-          byDay: {},
-          recent: [],
-        }),
-        settled(api<ChangeLog[]>("/history"), []),
-      ])
-
-      const online = devices.filter((d) => d.computedStatus === "online")
-      const offline = devices.filter((d) => d.computedStatus === "offline")
-      const pairing = devices.filter((d) => d.computedStatus === "pairing")
-      const pending = media.filter((m) => m.status === "pending_approval")
-      const occupancy =
-        capacity.length > 0
-          ? Math.round(
-              capacity.reduce((acc, g) => acc + g.occupancyPct, 0) /
-                capacity.length,
-            )
-          : 0
-
-      const dayKeys = lastNDays(7)
-      const byDay = report.byDay ?? {}
-      const playsByDay: DayPoint[] = dayKeys.map((key) => ({
-        key,
-        label: shortDayLabel(key),
-        value: byDay[key] ?? 0,
-      }))
-      const playsToday = playsByDay[playsByDay.length - 1]?.value ?? 0
-      const playsYesterday = playsByDay[playsByDay.length - 2]?.value ?? 0
-
-      const capacityTop = [...capacity]
-        .sort((a, b) => b.occupancyPct - a.occupancyPct)
-        .slice(0, 4)
-        .map((g) => ({
-          label: g.groupName,
-          pct: g.occupancyPct,
-          full: g.full,
-        }))
-
-      setStats({
-        clientsTotal: clients.length,
-        clientsCondo: clients.filter((c) => c.isCondo).length,
-        clientsAds: clients.filter((c) => !c.isCondo).length,
-        devicesOnline: online.length,
-        devicesOffline: offline.length,
-        devicesPairing: pairing.length,
-        devicesTotal: devices.length,
-        updatesAvailable: devices.filter((d) => d.updateAvailable).length,
-        pendingMedia: pending.length,
-        approvedMedia: media.filter((m) => m.status === "approved").length,
-        schedulesActive: schedules.filter((s) => s.active).length,
-        schedulesTotal: schedules.length,
-        scenesActive: scenes.filter((s) => s.active).length,
-        scenesTotal: scenes.length,
-        plansActive: plans.filter((p) => p.active).length,
-        plansTotal: plans.length,
-        capacityFull: capacity.filter((g) => g.full).length,
-        capacityGroups: capacity.length,
-        capacityAvgOccupancy: occupancy,
-        capacityTop,
-        plays7d: report.totalPlays,
-        playsByDay,
-        playsToday,
-        playsYesterday,
-        onlineHistory: pushOnlineHistory(online.length),
-        offlineDevices: offline.slice(0, 8),
-        pendingMediaList: pending.slice(0, 8),
-        recentPlays: (report.recent ?? []).slice(0, 8),
-        recentHistory: history.slice(0, 8),
-      })
+      try {
+        const data = await api<Overview>("/dashboard/overview")
+        const dayKeys = lastNDays(7)
+        setPlaysByDay(
+          dayKeys.map((key) => ({
+            key,
+            label: shortDayLabel(key),
+            value: data.playsByDay?.[key] ?? 0,
+          })),
+        )
+        setOnlineHistory(pushOnlineHistory(data.devicesOnline))
+        setStats(data)
+        setError(null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erro ao carregar")
+      }
     }
     void load()
     const t = setInterval(() => void load(), 30_000)
     return () => clearInterval(t)
   }, [])
 
-  const playsDelta = stats
-    ? deltaLabel(stats.playsToday, stats.playsYesterday)
-    : null
+  const playsToday = playsByDay[playsByDay.length - 1]?.value ?? 0
+  const playsYesterday = playsByDay[playsByDay.length - 2]?.value ?? 0
+  const playsDelta = stats ? deltaLabel(playsToday, playsYesterday) : null
 
   return (
     <div className="space-y-6 py-2">
@@ -301,6 +191,9 @@ export default function DashboardPage() {
         <p className="text-muted-foreground">
           Operação da rede de telas LEDE — atualiza a cada 30s
         </p>
+        {error ? (
+          <p className="mt-2 text-sm text-destructive">{error}</p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -333,7 +226,7 @@ export default function DashboardPage() {
                 </p>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">—</p>
+              <p className="text-sm text-muted-foreground">Carregando…</p>
             )}
           </CardContent>
         </Card>
@@ -352,8 +245,8 @@ export default function DashboardPage() {
               <>
                 <Sparkline
                   values={
-                    stats.onlineHistory.length >= 2
-                      ? stats.onlineHistory
+                    onlineHistory.length >= 2
+                      ? onlineHistory
                       : [
                           Math.max(0, stats.devicesOnline - 1),
                           stats.devicesOnline,
@@ -383,15 +276,10 @@ export default function DashboardPage() {
                   <Badge variant="secondary">
                     Offline {stats.devicesOffline}
                   </Badge>
-                  {stats.updatesAvailable > 0 ? (
-                    <Badge variant="destructive">
-                      Update {stats.updatesAvailable}
-                    </Badge>
-                  ) : null}
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">—</p>
+              <p className="text-sm text-muted-foreground">Carregando…</p>
             )}
           </CardContent>
         </Card>
@@ -425,7 +313,7 @@ export default function DashboardPage() {
                 </p>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">—</p>
+              <p className="text-sm text-muted-foreground">Carregando…</p>
             )}
           </CardContent>
         </Card>
@@ -449,9 +337,9 @@ export default function DashboardPage() {
           <CardContent className="space-y-2">
             {stats ? (
               <>
-                <MiniBarChart points={stats.playsByDay} />
+                <MiniBarChart points={playsByDay} />
                 <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {stats.playsByDay.map((d) => (
+                  {playsByDay.map((d) => (
                     <span key={d.key} className="w-full text-center">
                       {d.label.slice(0, 3)}
                     </span>
@@ -468,7 +356,7 @@ export default function DashboardPage() {
                 </Link>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">—</p>
+              <p className="text-sm text-muted-foreground">Carregando…</p>
             )}
           </CardContent>
         </Card>
@@ -624,7 +512,7 @@ export default function DashboardPage() {
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">—</p>
+              <p className="text-sm text-muted-foreground">Carregando…</p>
             )}
           </CardContent>
         </Card>

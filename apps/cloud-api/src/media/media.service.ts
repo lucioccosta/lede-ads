@@ -101,36 +101,58 @@ export class MediaService {
     const fromDate = from ? new Date(from) : new Date(Date.now() - 7 * 86400000);
     const toDate = to ? new Date(to) : new Date();
 
-    const proofs = await this.prisma.proofOfPlay.findMany({
-      where: {
-        startedAt: { gte: fromDate, lte: toDate },
-        media: clientId ? { clientId } : undefined,
-      },
-      include: {
-        media: { select: { id: true, name: true, clientId: true } },
-        device: { select: { id: true, name: true } },
-        scene: { select: { id: true, name: true } },
-      },
-      orderBy: { startedAt: 'desc' },
-    });
+    const proofWhere = {
+      startedAt: { gte: fromDate, lte: toDate },
+      media: clientId ? { clientId } : undefined,
+    };
 
-    const plans = await this.prisma.plan.findMany({
-      where: {
-        active: true,
-        ...(clientId ? { clientId } : {}),
-      },
-    });
+    const [totalPlays, recent, plans, byDayRows] = await Promise.all([
+      this.prisma.proofOfPlay.count({ where: proofWhere }),
+      this.prisma.proofOfPlay.findMany({
+        where: proofWhere,
+        include: {
+          media: { select: { id: true, name: true, clientId: true } },
+          device: { select: { id: true, name: true } },
+          scene: { select: { id: true, name: true } },
+        },
+        orderBy: { startedAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.plan.findMany({
+        where: {
+          active: true,
+          ...(clientId ? { clientId } : {}),
+        },
+      }),
+      clientId
+        ? this.prisma.$queryRaw<Array<{ day: Date; count: number }>>`
+            SELECT DATE_TRUNC('day', p."startedAt") AS day, COUNT(*)::int AS count
+            FROM "ProofOfPlay" p
+            INNER JOIN "Media" m ON m.id = p."mediaId"
+            WHERE p."startedAt" >= ${fromDate}
+              AND p."startedAt" <= ${toDate}
+              AND m."clientId" = ${clientId}
+            GROUP BY 1
+            ORDER BY 1
+          `
+        : this.prisma.$queryRaw<Array<{ day: Date; count: number }>>`
+            SELECT DATE_TRUNC('day', "startedAt") AS day, COUNT(*)::int AS count
+            FROM "ProofOfPlay"
+            WHERE "startedAt" >= ${fromDate} AND "startedAt" <= ${toDate}
+            GROUP BY 1
+            ORDER BY 1
+          `,
+    ]);
 
     const byDay: Record<string, number> = {};
-    for (const p of proofs) {
-      const day = p.startedAt.toISOString().slice(0, 10);
-      byDay[day] = (byDay[day] ?? 0) + 1;
+    for (const row of byDayRows) {
+      byDay[new Date(row.day).toISOString().slice(0, 10)] = Number(row.count);
     }
 
     return {
       from: fromDate,
       to: toDate,
-      totalPlays: proofs.length,
+      totalPlays,
       byDay,
       plans: plans.map((plan) => ({
         id: plan.id,
@@ -138,7 +160,7 @@ export class MediaService {
         samplesPerDay: plan.samplesPerDay,
         clientId: plan.clientId,
       })),
-      recent: proofs.slice(0, 50),
+      recent,
     };
   }
 }
