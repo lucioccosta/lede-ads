@@ -6,6 +6,7 @@ Plataforma **Cloud + Edge** para propagandas em TVs e telas LED (elevadores, lob
 - **Portal do cliente:** envio/aprovação de criativos, amostragem e histórico  
 - **Portal do condomínio:** troca do aviso na área exclusiva da tela (sem editar cenas/agendas)  
 - **Edge Android:** player kiosk com sync, cache offline e proof-of-play  
+- **Edge Linux:** mesmo player em Arch Linux ARM no SD do SB3000 (suporte ao dongle HaLow), imagem pronta para gravar  
 
 ## Estrutura
 
@@ -14,6 +15,7 @@ apps/
   cloud-web/      # Next.js — dashboard LEDE + portal cliente/condomínio (shadcn/ui)
   cloud-api/      # NestJS + Prisma + PostgreSQL
   edge-android/   # Player Android 10+ (Kotlin, ExoPlayer) — sideload por tipo de box
+  edge-linux/     # Player Linux (Python, GTK4, GStreamer) + imagem do SD (Arch ARM)
 releases/
   edge/           # Docs + artefatos por dispositivo (APKs no GitHub Releases)
 packages/
@@ -168,8 +170,10 @@ Prefixo global: `/api`.
 | Planos | CRUD com `months` + `groupIds` (valida overbook) |
 | Mídias / uploads | CRUD mídia, review, `POST /uploads` |
 | Cenas / agendas | CRUD LEDE; portal condo: `GET /scenes/condo/active` + `PATCH` só zonas condo; agendas ads por `groupId` |
-| Devices | pairing, monitoring, comandos, re-parear, `GET /devices/mine` |
-| Edge | `/edge/pair`, `/edge/sync` (RR multi-ads + house), heartbeat, PoP, screenshot |
+| Devices | monitoring, comandos, re-parear, `GET /devices/mine`; pairing por código (legado Android ≤ 0.5.16) |
+| Auto-registro | `GET /device-registrations`, `POST /device-registrations/:id/approve` \| `reject`, `DELETE /device-registrations/:id` |
+| Edge | `/edge/register` + `/edge/register/status` (auto-registro), `/edge/sync` (RR multi-ads + house), heartbeat, PoP, screenshot, `/edge/pair` (legado) |
+| Uploads | `POST /uploads` — vídeo sem áudio e normalizado (largura %32, altura %16) para o decoder do Edge Linux |
 | Relatórios | `GET /reports/sampling` |
 | Histórico | `GET /history` |
 
@@ -196,7 +200,7 @@ cd apps/edge-android
 ./gradlew exportSb3000CasaApk    # dev Casa (local)
 ```
 
-Após parear, o player entra em kiosk (Home + lock task).  
+O box **se registra sozinho**: a TV mostra o logo e um código, e a LEDE aceita em **Telas → Aguardando aprovação** (detalhes em [`docs/EDGE.md`](docs/EDGE.md#auto-registro-sem-código-de-pairing)). Depois disso o player entra em kiosk (Home + lock task).  
 **Sair:** Volume+ segurado + Voltar ×3, ou Voltar ×7 → launcher Nova.  
 Telemetria no heartbeat: CPU, RAM, disco, uptime — visível em **Telas**.
 ### Offline e kiosk
@@ -218,6 +222,22 @@ Habilita reboot remoto via DPM. Sem Device Owner, o kiosk imersivo continua; o c
 #### Comandos remotos
 
 Em **Telas**: Re-sync / Screenshot / Reiniciar — entregues no próximo heartbeat (~30s).
+
+---
+
+## Edge Linux
+
+Guia completo: [`docs/EDGE_LINUX.md`](docs/EDGE_LINUX.md) · código: [`apps/edge-linux`](apps/edge-linux/).
+
+| targetId | Artefato | API | GitHub |
+|----------|----------|-----|--------|
+| `sb3000-linux` | `lede-edge-sb3000-linux-vX.Y.Z.tar.zst` (OTA do app) | `https://api.lede.tv.br/api` | **Sim (OTA)** |
+| — | `lede-edge-sb3000-linux-vX.Y.Z.img.xz` (imagem do SD) | idem | gravar com balenaEtcher |
+
+- Arch Linux ARM (MiniArch, kernel 7.3.1) no cartão SD; o Android da eMMC fica intacto.
+- Dongle **AsiaRF AWHUSB-001 (HaLow)** funciona nativamente (`cdc_ncm` → `enu1`).
+- Auto-registro, splash da LEDE no boot, 1280×720, decoder de vídeo por hardware, OTA com rollback automático.
+- Imagem gerada numa máquina x86 sem root, a partir da imagem oficial MiniArch.
 
 ---
 
