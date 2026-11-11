@@ -1,0 +1,18 @@
+#!/bin/sh
+# Sessão do cage: mostra o splash IMEDIATAMENTE (imv, nativo, ~0,3 s) e abre o
+# LEDE Edge por cima. O app encerra o imv quando a primeira tela dele (o mesmo
+# logo) estiver desenhada → boot sem tela preta entre o splash e o app.
+DIR=/usr/share/lede-edge/splash
+deg=0
+case "$(grep -o '"orientation": *"[a-z_]*"' /var/lib/lede-edge/device.json 2>/dev/null)" in
+  *'"portrait"') deg=90 ;;
+  *landscape_reverse*) deg=180 ;;
+  *portrait_reverse*) deg=270 ;;
+esac
+img="$DIR/splash-1280x720-$deg.png"
+[ -f "$img" ] || img="$DIR/splash-1280x720-0.png"
+if command -v imv >/dev/null 2>&1 && [ -f "$img" ]; then
+  imv -f -b 000000 -s full "$img" >/dev/null 2>&1 &
+  echo $! > "$XDG_RUNTIME_DIR/splash.pid"
+fi
+exec /usr/bin/python3 -m lede_edge

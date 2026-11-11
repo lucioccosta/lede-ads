@@ -1,0 +1,15 @@
+[Unit]
+Description=LEDE splash (logo no HDMI desde o boot)
+DefaultDependencies=no
+# Sem After=udev: /dev/fb0 é criado pelo kernel (devtmpfs) — roda segundos
+# após o systemd iniciar. Só precisa da raiz montada (já está, rw ou ro).
+Before=sysinit.target systemd-udevd.service lede-edge.service
+ConditionPathExists=/dev/fb0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/lede-edge/splash
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

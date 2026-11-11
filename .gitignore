@@ -10,6 +10,10 @@ build/
 out/
 *.tsbuildinfo
 releases/edge/**/*.apk
+releases/edge/**/*.tar.zst
+releases/edge/**/*.img
+releases/edge/**/*.img.xz
+releases/edge/**/*.img.xz.sha256
 
 # Env
 .env
@@ -49,3 +53,7 @@ apps/cloud-api/uploads/
 .windsurf/
 **/.windsurf/
 skills-lock.json
+
+# Python
+__pycache__/
+*.pyc
