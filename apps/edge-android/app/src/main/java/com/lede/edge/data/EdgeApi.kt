@@ -19,29 +19,56 @@ class EdgeApi {
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val json = "application/json; charset=utf-8".toMediaType()
 
-    suspend fun pair(code: String, deviceName: String): PairResult = withContext(Dispatchers.IO) {
-        val body = JSONObject()
-            .put("code", code)
-            .put("deviceName", deviceName)
-            .toString()
-            .toRequestBody(json)
+    /** Auto-registro: o box se apresenta; a LEDE aceita/recusa no Cloud. */
+    suspend fun register(payload: JSONObject): RegisterResult = withContext(Dispatchers.IO) {
         val req = Request.Builder()
-            .url("${BuildConfig.API_BASE_URL}/edge/pair")
-            .post(body)
+            .url("${BuildConfig.API_BASE_URL}/edge/register")
+            .post(payload.toString().toRequestBody(json))
             .build()
         client.newCall(req).execute().use { res ->
             val text = res.body?.string().orEmpty()
-            if (!res.isSuccessful) error(text.ifBlank { "Falha no pairing (${res.code})" })
-            val obj = JSONObject(text)
-            PairResult(
-                deviceId = obj.getString("deviceId"),
-                deviceToken = obj.getString("deviceToken"),
-                name = obj.getString("name"),
-                shortCode = obj.optString("shortCode", ""),
-                orientation = obj.optString("orientation", "landscape"),
+            if (!res.isSuccessful) error(text.ifBlank { "Falha no registro (${res.code})" })
+            val obj = if (text.isBlank()) JSONObject() else JSONObject(text)
+            RegisterResult(
+                status = obj.optString("status", "pending"),
+                code = obj.optString("code", "").ifBlank { null },
+                reason = obj.optString("reason", "").ifBlank { null },
             )
         }
     }
+
+    /** Consulta a decisão. Aprovado → [RegisterResult.approval] com o token. */
+    suspend fun registerStatus(hardwareId: String, secret: String): RegisterResult =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("${BuildConfig.API_BASE_URL}/edge/register/status")
+                .header("x-hardware-id", hardwareId)
+                .header("x-registration-secret", secret)
+                .get()
+                .build()
+            client.newCall(req).execute().use { res ->
+                val text = res.body?.string().orEmpty()
+                if (!res.isSuccessful) error(text.ifBlank { "Falha na consulta do registro (${res.code})" })
+                val obj = if (text.isBlank()) JSONObject() else JSONObject(text)
+                val status = obj.optString("status", "pending")
+                RegisterResult(
+                    status = status,
+                    code = obj.optString("code", "").ifBlank { null },
+                    reason = obj.optString("reason", "").ifBlank { null },
+                    approval = if (status == "approved") {
+                        PairResult(
+                            deviceId = obj.getString("deviceId"),
+                            deviceToken = obj.getString("deviceToken"),
+                            name = obj.optString("name", ""),
+                            shortCode = obj.optString("shortCode", ""),
+                            orientation = obj.optString("orientation", "landscape"),
+                        )
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
 
     suspend fun sync(token: String): SyncManifest = withContext(Dispatchers.IO) {
         val req = Request.Builder()
@@ -217,6 +244,15 @@ class EdgeApi {
     }
 }
 
+data class RegisterResult(
+    /** pending | approved | rejected | unknown */
+    val status: String,
+    val code: String? = null,
+    val reason: String? = null,
+    val approval: PairResult? = null,
+)
+
+/** Dados do device aceito no Cloud (mesmo payload do antigo /edge/pair). */
 data class PairResult(
     val deviceId: String,
     val deviceToken: String,
