@@ -278,7 +278,19 @@ data class SyncZone(
     val width: Int? = null,
     val height: Int? = null,
     val media: SyncMedia?,
-)
+    /** Playlist Stories (zona condo). Se vazio/null, usa [media] única. */
+    val items: List<SyncMedia>? = null,
+) {
+    fun storyPlaylist(): List<SyncMedia> {
+        val list = items?.filter { it.checksum.isNotBlank() }.orEmpty()
+        if (list.isNotEmpty()) return list
+        val single = media ?: return emptyList()
+        return if (single.checksum.isNotBlank()) listOf(single) else emptyList()
+    }
+
+    fun playlistFingerprint(): String =
+        storyPlaylist().joinToString("|") { "${it.checksum}:${it.durationMs}" }
+}
 
 data class SyncMedia(
     val id: String,

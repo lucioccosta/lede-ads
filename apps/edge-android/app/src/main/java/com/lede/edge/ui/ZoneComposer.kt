@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.media3.common.C
@@ -14,6 +15,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.load
 import com.lede.edge.R
+import com.lede.edge.data.SyncMedia
 import com.lede.edge.data.SyncScene
 import com.lede.edge.data.SyncZone
 import kotlin.math.max
@@ -23,27 +25,57 @@ import kotlin.math.roundToInt
  * Compõe uma cena multi-zona no container, escalando x/y/w/h do layout
  * lógico para a área de anúncio (acima da tarja de índices).
  *
- * A faixa inferior do layout lógico (proporcional a [TICKER_BAR_DP] sobre
- * [TICKER_REF_HEIGHT]) é reservada — zonas que invadem essa faixa são
- * recortadas. O [container] já não inclui o slot físico da tarja (36dp).
- *
- * Vídeo usa [PlayerView] com TextureView (`zone_video.xml`) para respeitar a
- * rotação do [OrientationHelper] em boxes portrait — SurfaceView ignora
- * `View.rotation` do pai e aparece na orientação contrária.
+ * Zona condo com [SyncZone.items] usa [CondoStoriesView] persistente entre
+ * advances de cenas de ads (mesmo fingerprint = continua o índice).
  */
 class ZoneComposer(private val context: Context) {
     private val players = mutableListOf<ExoPlayer>()
+    private val storiesByZoneKey = mutableMapOf<String, CondoStoriesView>()
 
     fun clear(container: FrameLayout) {
         players.forEach { it.release() }
         players.clear()
+        storiesByZoneKey.values.forEach { it.stop() }
+        storiesByZoneKey.clear()
         container.removeAllViews()
     }
 
-    fun compose(container: FrameLayout, scene: SyncScene) {
-        clear(container)
+    /** Mídias atualmente visíveis (inclui story ativo da zona condo). */
+    fun visibleMediaEntries(scene: SyncScene): List<Pair<String, String>> {
+        val out = mutableListOf<Pair<String, String>>()
+        scene.zones.forEach { zone ->
+            val stories = storiesByZoneKey[zone.key]
+            val playlist = zone.storyPlaylist()
+            if (stories != null && playlist.size > 1) {
+                val cur = stories.currentMedia()
+                if (cur != null) {
+                    out.add(cur.id to cur.checksum)
+                    return@forEach
+                }
+            }
+            val m = zone.media ?: playlist.firstOrNull()
+            if (m != null) out.add(m.id to m.checksum)
+        }
+        return out
+    }
 
-        // Aguarda layout se ainda não medido (evita scale errado / “fullscreen”)
+    fun compose(container: FrameLayout, scene: SyncScene) {
+        players.forEach { it.release() }
+        players.clear()
+
+        // Remove views não-stories; stories são reparentadas
+        val keepStories = HashSet<CondoStoriesView>()
+        val toRemove = mutableListOf<View>()
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            if (child is CondoStoriesView) {
+                keepStories.add(child)
+            } else {
+                toRemove.add(child)
+            }
+        }
+        toRemove.forEach { container.removeView(it) }
+
         if (container.width <= 0 || container.height <= 0) {
             container.post { compose(container, scene) }
             return
@@ -62,6 +94,8 @@ class ZoneComposer(private val context: Context) {
             return
         }
 
+        val usedKeys = mutableSetOf<String>()
+
         scene.zones.forEach { zone ->
             val zX = (zone.x ?: 0).coerceIn(0, layoutW - 1)
             val zY = (zone.y ?: 0).coerceIn(0, contentLayoutH - 1)
@@ -79,38 +113,49 @@ class ZoneComposer(private val context: Context) {
                 (zH * scaleY).roundToInt().coerceAtMost(screenH - top),
             )
 
-            val view = createZoneView(zone)
             val lp = FrameLayout.LayoutParams(width, height).apply {
                 leftMargin = left
                 topMargin = top
             }
-            container.addView(view, lp)
-        }
-    }
 
-    companion object {
-        /** Altura física da tarja no player (activity_player.xml). */
-        const val TICKER_BAR_DP = 36
-
-        /** Altura de referência dos layouts (ex.: 1920×1080). */
-        const val TICKER_REF_HEIGHT = 1080
-
-        fun tickerReservePx(layoutH: Int): Int {
-            return max(
-                1,
-                ((layoutH * TICKER_BAR_DP) / TICKER_REF_HEIGHT.toFloat()).roundToInt(),
-            )
-        }
-    }
-
-    private fun createZoneView(zone: SyncZone): View {
-        val media = zone.media
-        if (media == null) {
-            return View(context).apply {
-                setBackgroundColor(Color.BLACK)
+            val playlist = zone.storyPlaylist()
+            val fp = zone.playlistFingerprint()
+            val useStories = !zone.items.isNullOrEmpty() && playlist.isNotEmpty()
+            if (useStories) {
+                usedKeys.add(zone.key)
+                val stories = storiesByZoneKey.getOrPut(zone.key) {
+                    CondoStoriesView(context)
+                }
+                if (stories.parent !== container) {
+                    (stories.parent as? ViewGroup)?.removeView(stories)
+                    container.addView(stories, lp)
+                } else {
+                    stories.layoutParams = lp
+                }
+                stories.bind(playlist, fp)
+                keepStories.remove(stories)
+            } else {
+                val view = createSingleMediaView(zone.media ?: playlist.firstOrNull())
+                container.addView(view, lp)
             }
         }
 
+        // Stories de zonas que sumiram do manifesto
+        storiesByZoneKey.keys
+            .filter { it !in usedKeys }
+            .toList()
+            .forEach { key ->
+                storiesByZoneKey.remove(key)?.let { v ->
+                    v.stop()
+                    container.removeView(v)
+                }
+            }
+    }
+
+    private fun createSingleMediaView(media: SyncMedia?): View {
+        if (media == null) {
+            return View(context).apply { setBackgroundColor(Color.BLACK) }
+        }
         return if (media.type == "video") {
             val playerView = LayoutInflater.from(context)
                 .inflate(R.layout.zone_video, null, false) as PlayerView
@@ -129,10 +174,20 @@ class ZoneComposer(private val context: Context) {
             ImageView(context).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(Color.BLACK)
-                load(media.url) {
-                    crossfade(true)
-                }
+                load(media.url) { crossfade(true) }
             }
+        }
+    }
+
+    companion object {
+        const val TICKER_BAR_DP = 36
+        const val TICKER_REF_HEIGHT = 1080
+
+        fun tickerReservePx(layoutH: Int): Int {
+            return max(
+                1,
+                ((layoutH * TICKER_BAR_DP) / TICKER_REF_HEIGHT.toFloat()).roundToInt(),
+            )
         }
     }
 }

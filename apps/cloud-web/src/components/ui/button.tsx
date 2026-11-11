@@ -1,3 +1,4 @@
+import * as React from "react"
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
@@ -44,10 +45,29 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  type = "button",
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+  // Base UI useButton força type="button" no merge final e quebra submit de forms.
+  if (type === "submit" || type === "reset") {
+    const {
+      render: _render,
+      nativeButton: _native,
+      focusableWhenDisabled: _fwd,
+      ...rest
+    } = props as ButtonPrimitive.Props & Record<string, unknown>
+    return (
+      <button
+        type={type}
+        data-slot="button"
+        className={cn(buttonVariants({ variant, size, className }))}
+        {...(rest as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+      />
+    )
+  }
   return (
     <ButtonPrimitive
+      type={type}
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}

@@ -26,16 +26,20 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    // FormData cobre o caso em que o input controlado não sincronizou o state
+    const fd = new FormData(e.currentTarget)
+    const emailVal = String(fd.get("email") || email).trim()
+    const passwordVal = String(fd.get("password") || password)
     try {
       const res = await api<{ accessToken: string; user: AuthUser }>(
         "/auth/login",
         {
           method: "POST",
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email: emailVal, password: passwordVal }),
         },
       )
       setAuth(res.accessToken, res.user)
@@ -52,7 +56,11 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card className="overflow-hidden p-0">
         <CardContent className="grid p-0 md:grid-cols-2">
-          <form className="p-6 md:p-8" onSubmit={onSubmit}>
+          <form
+            className="p-6 md:p-8"
+            method="post"
+            onSubmit={onSubmit}
+          >
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-bold">Bem-vindo de volta</h1>
@@ -64,7 +72,9 @@ export function LoginForm({
                 <FieldLabel htmlFor="email">E-mail</FieldLabel>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
+                  autoComplete="username"
                   placeholder="m@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -77,7 +87,9 @@ export function LoginForm({
                 </div>
                 <Input
                   id="password"
+                  name="password"
                   type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -89,7 +101,7 @@ export function LoginForm({
                 </Alert>
               )}
               <Field>
-                <Button type="submit" disabled={loading}>
+                <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Entrando…" : "Entrar"}
                 </Button>
               </Field>

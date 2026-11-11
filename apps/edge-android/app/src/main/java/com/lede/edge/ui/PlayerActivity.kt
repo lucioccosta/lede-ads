@@ -555,13 +555,10 @@ class PlayerActivity : AppCompatActivity() {
             render.run()
         }
 
-        val mediaEntries = scene.zones.mapNotNull { z ->
-            val m = z.media ?: return@mapNotNull null
-            m.id to m.checksum
-        }
-
         handler.postDelayed({
             if (token != advanceToken) return@postDelayed
+            // Stories condo: PoP do story visível no momento do advance
+            val mediaEntries = composer.visibleMediaEntries(scene)
             advance(scene, mediaEntries, startedAt)
         }, scene.durationMs.toLong().coerceAtLeast(1_000))
     }

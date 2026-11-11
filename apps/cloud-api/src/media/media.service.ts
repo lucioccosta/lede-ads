@@ -17,10 +17,15 @@ export class MediaService {
 
   async findAll(clientId?: string) {
     const rows = await this.prisma.media.findMany({
-      where: clientId ? { clientId } : undefined,
+      where: {
+        ...(clientId ? { clientId } : {}),
+        status: { not: MediaStatus.archived },
+      },
       include: {
         client: { select: { id: true, name: true, kind: true } },
-        _count: { select: { sceneZones: true, proofs: true } },
+        _count: {
+          select: { sceneZones: true, sceneZoneItems: true, proofs: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -38,7 +43,9 @@ export class MediaService {
       where: { id },
       include: {
         client: true,
-        _count: { select: { sceneZones: true, proofs: true } },
+        _count: {
+          select: { sceneZones: true, sceneZoneItems: true, proofs: true },
+        },
       },
     });
     if (!media) throw new NotFoundException('Mídia não encontrada');
@@ -87,20 +94,37 @@ export class MediaService {
     });
   }
 
-  async remove(id: string) {
-    const media = await this.findOne(id);
-    if (media._count.proofs > 0) {
-      throw new BadRequestException(
-        `Mídia com ${media._count.proofs} prova(s) de exibição não pode ser removida`,
-      );
-    }
-    // Desvincula de cenas antes de apagar
-    if (media._count.sceneZones > 0) {
-      await this.prisma.sceneZone.updateMany({
-        where: { mediaId: id },
-        data: { mediaId: null },
+  private async unlinkFromScenes(mediaId: string) {
+    const affectedZones = await this.prisma.sceneZone.findMany({
+      where: {
+        OR: [{ mediaId }, { items: { some: { mediaId } } }],
+      },
+      select: { id: true },
+    });
+    await this.prisma.sceneZoneItem.deleteMany({ where: { mediaId } });
+    for (const z of affectedZones) {
+      const first = await this.prisma.sceneZoneItem.findFirst({
+        where: { sceneZoneId: z.id },
+        orderBy: { sortOrder: 'asc' },
+      });
+      await this.prisma.sceneZone.update({
+        where: { id: z.id },
+        data: { mediaId: first?.mediaId ?? null },
       });
     }
+  }
+
+  async remove(id: string) {
+    const media = await this.findOne(id);
+    await this.unlinkFromScenes(id);
+
+    if (media._count.proofs > 0) {
+      return this.prisma.media.update({
+        where: { id },
+        data: { status: MediaStatus.archived },
+      });
+    }
+
     return this.prisma.media.delete({ where: { id } });
   }
 

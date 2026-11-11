@@ -19,6 +19,7 @@ enum MediaStatus {
   pending_approval
   approved
   rejected
+  archived
 }
 
 enum MediaType {
@@ -222,8 +223,9 @@ model Media {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  sceneZones SceneZone[]
-  proofs     ProofOfPlay[]
+  sceneZones     SceneZone[]
+  sceneZoneItems SceneZoneItem[]
+  proofs         ProofOfPlay[]
 }
 
 model Scene {
@@ -250,10 +252,27 @@ model SceneZone {
   sceneId String
   scene   Scene  @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   zoneKey String
+  /** Primeiro item da playlist (compat dashboard / sync legado). */
   mediaId String?
   media   Media? @relation(fields: [mediaId], references: [id])
 
+  items SceneZoneItem[]
+
   @@unique([sceneId, zoneKey])
+}
+
+/** Playlist ordenada da zona (Stories do condomínio). */
+model SceneZoneItem {
+  id          String    @id @default(cuid())
+  sceneZoneId String
+  sceneZone   SceneZone @relation(fields: [sceneZoneId], references: [id], onDelete: Cascade)
+  mediaId     String
+  media       Media     @relation(fields: [mediaId], references: [id])
+  sortOrder   Int       @default(0)
+  durationMs  Int       @default(10000)
+  createdAt   DateTime  @default(now())
+
+  @@index([sceneZoneId, sortOrder])
 }
 
 model Device {

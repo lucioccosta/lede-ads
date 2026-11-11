@@ -35,6 +35,15 @@ type LayoutZone = {
   role?: 'full' | 'condo' | 'ads';
 };
 
+type SyncMediaPayload = {
+  id: string;
+  type: string;
+  url: string;
+  checksum: string;
+  durationMs: number;
+  mimeType: string;
+};
+
 type SyncZone = {
   id: string;
   key: string;
@@ -43,14 +52,9 @@ type SyncZone = {
   y: number;
   width: number;
   height: number;
-  media: {
-    id: string;
-    type: string;
-    url: string;
-    checksum: string;
-    durationMs: number;
-    mimeType: string;
-  } | null;
+  media: SyncMediaPayload | null;
+  /** Playlist Stories (zona condo). Vazio/ausente = mídia única. */
+  items?: SyncMediaPayload[];
 };
 
 type SyncScene = {
@@ -127,6 +131,29 @@ export class EdgeService {
     return zonesJson as LayoutZone[];
   }
 
+  private toSyncMedia(
+    media: {
+      id: string;
+      type: string;
+      status: MediaStatus;
+      url: string;
+      checksum: string;
+      durationMs: number;
+      mimeType: string;
+    } | null,
+    durationOverride?: number,
+  ): SyncMediaPayload | null {
+    if (!media || media.status !== MediaStatus.approved) return null;
+    return {
+      id: media.id,
+      type: media.type,
+      url: toPublicUrl(media.url),
+      checksum: media.checksum,
+      durationMs: durationOverride ?? media.durationMs,
+      mimeType: media.mimeType,
+    };
+  }
+
   private buildZonesFromSchedule(
     schedule: {
       scene: {
@@ -143,6 +170,18 @@ export class EdgeService {
             durationMs: number;
             mimeType: string;
           } | null;
+          items?: Array<{
+            durationMs: number;
+            media: {
+              id: string;
+              type: string;
+              status: MediaStatus;
+              url: string;
+              checksum: string;
+              durationMs: number;
+              mimeType: string;
+            };
+          }>;
         }>;
         layout: { width: number; height: number; zonesJson: unknown };
       };
@@ -162,8 +201,11 @@ export class EdgeService {
       .filter((z) => !allowedKeys || allowedKeys.has(z.zoneKey))
       .map((z) => {
         const geometry = layoutZones.find((lz) => lz.key === z.zoneKey);
-        const approved =
-          z.media && z.media.status === MediaStatus.approved ? z.media : null;
+        const items = (z.items ?? [])
+          .map((it) => this.toSyncMedia(it.media, it.durationMs))
+          .filter((m): m is SyncMediaPayload => m != null);
+        const media =
+          items[0] ?? this.toSyncMedia(z.media);
         return {
           id: z.id,
           key: z.zoneKey,
@@ -172,16 +214,8 @@ export class EdgeService {
           y: geometry?.y ?? 0,
           width: geometry?.width ?? schedule.scene.layout.width,
           height: geometry?.height ?? schedule.scene.layout.height,
-          media: approved
-            ? {
-                id: approved.id,
-                type: approved.type,
-                url: toPublicUrl(approved.url),
-                checksum: approved.checksum,
-                durationMs: approved.durationMs,
-                mimeType: approved.mimeType,
-              }
-            : null,
+          media,
+          ...(items.length > 0 ? { items } : {}),
         };
       });
   }
@@ -212,7 +246,9 @@ export class EdgeService {
     roleFilter?: 'full' | 'condo' | 'ads',
   ): SyncScene | null {
     const zones = this.buildZonesFromSchedule(schedule, roleFilter);
-    if (!zones.some((z) => z.media != null)) return null;
+    if (!zones.some((z) => z.media != null || (z.items?.length ?? 0) > 0)) {
+      return null;
+    }
     return {
       id: schedule.scene.id,
       name: schedule.scene.name,
@@ -245,7 +281,15 @@ export class EdgeService {
         plan: true,
         scene: {
           include: {
-            zones: { include: { media: true } },
+            zones: {
+              include: {
+                media: true,
+                items: {
+                  orderBy: { sortOrder: 'asc' },
+                  include: { media: true },
+                },
+              },
+            },
             layout: true,
           },
         },
@@ -358,6 +402,7 @@ export class EdgeService {
         width: z.width,
         height: z.height,
         media: null,
+        items: [],
       }));
   }
 
@@ -371,7 +416,11 @@ export class EdgeService {
     layoutId: string;
   }): SyncScene | null {
     const zones = [...params.condoZones, ...params.adsZones];
-    if (!zones.some((z) => z.media != null)) return null;
+    if (
+      !zones.some((z) => z.media != null || (z.items?.length ?? 0) > 0)
+    ) {
+      return null;
+    }
     return {
       id: params.sceneId,
       name: params.name,
@@ -444,16 +493,33 @@ export class EdgeService {
             durationMs: number;
             mimeType: string;
           } | null;
+          items?: Array<{
+            durationMs: number;
+            media: {
+              id: string;
+              type: string;
+              status: MediaStatus;
+              url: string;
+              checksum: string;
+              durationMs: number;
+              mimeType: string;
+            };
+          }>;
         }>;
       };
     }>,
   ): Promise<SyncScene[]> {
-    const condoSchedule = active.find(
+    const condoCandidates = active.filter(
       (s) =>
         s.channel === ScheduleChannel.condo_notice &&
         !!device.clientId &&
         s.clientId === device.clientId,
     );
+    // Preferência: aviso da tela específica > grupo
+    const condoSchedule =
+      condoCandidates.find((s) => s.deviceId === device.id) ??
+      condoCandidates.find((s) => s.groupId && !s.deviceId) ??
+      condoCandidates[0];
 
     const paidAds = active.filter(
       (s) =>
@@ -483,7 +549,15 @@ export class EdgeService {
           include: {
             houseScene: {
               include: {
-                zones: { include: { media: true } },
+                zones: {
+                  include: {
+                    media: true,
+                    items: {
+                      orderBy: { sortOrder: 'asc' },
+                      include: { media: true },
+                    },
+                  },
+                },
                 layout: true,
               },
             },

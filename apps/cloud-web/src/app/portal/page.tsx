@@ -54,7 +54,7 @@ export default function PortalHome() {
                   href="/portal/condo"
                   className={cn(buttonVariants(), "mt-4 w-fit")}
                 >
-                  Atualizar aviso
+                  Gerenciar avisos
                 </Link>
               </CardHeader>
             </Card>

@@ -250,8 +250,19 @@ async function main() {
       durationMs: 10000,
       zones: {
         create: [
-          { zoneKey: 'condo', mediaId: mediaCondo.id },
-          { zoneKey: 'ads', mediaId: mediaAds.id },
+          {
+            zoneKey: 'condo',
+            mediaId: mediaCondo.id,
+            items: {
+              create: [
+                {
+                  mediaId: mediaCondo.id,
+                  sortOrder: 0,
+                  durationMs: 10000,
+                },
+              ],
+            },
+          },
         ],
       },
     },
@@ -346,7 +357,6 @@ async function main() {
       name: 'Condo elevador',
       clientId: condo.id,
       sceneId: sceneCondo.id,
-      deviceId: deviceElevator.id,
       groupId: deviceGroup.id,
       channel: ScheduleChannel.condo_notice,
       priority: 20,

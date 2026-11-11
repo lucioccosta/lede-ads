@@ -23,9 +23,10 @@ class MediaCache(
         val assets = linkedMapOf<String, SyncMedia>()
         manifest.scenes.forEach { scene ->
             scene.zones.forEach { zone ->
-                val media = zone.media ?: return@forEach
-                if (media.checksum.isNotBlank()) {
-                    assets[media.checksum] = media
+                zone.storyPlaylist().forEach { media ->
+                    if (media.checksum.isNotBlank()) {
+                        assets[media.checksum] = media
+                    }
                 }
             }
         }
@@ -43,14 +44,14 @@ class MediaCache(
         val localScenes = manifest.scenes.map { scene ->
             scene.copy(
                 zones = scene.zones.map { zone ->
-                    val media = zone.media ?: return@map zone
-                    val local = localUriIfPresent(media.checksum)
-                    if (local != null) {
-                        zone.copy(media = media.copy(url = local))
-                    } else {
-                        // Offline: remove mídia não cacheada para não quebrar o composer
-                        zone.copy(media = null)
+                    fun localize(m: SyncMedia): SyncMedia? {
+                        val local = localUriIfPresent(m.checksum) ?: return null
+                        return m.copy(url = local)
                     }
+                    val items = zone.items?.mapNotNull { localize(it) }
+                    val media = zone.media?.let { localize(it) }
+                        ?: items?.firstOrNull()
+                    zone.copy(media = media, items = items)
                 },
             )
         }

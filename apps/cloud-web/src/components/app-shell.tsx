@@ -51,7 +51,7 @@ const titles: Record<string, string> = {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const [user, setUser] = useState<AuthUser | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser())
   const [workspace, setWorkspaceState] = useState<Workspace>(() =>
     getWorkspace(),
   )
@@ -59,6 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = getStoredUser()
     if (!stored) {
+      setUser(null)
       router.replace("/login")
       return
     }

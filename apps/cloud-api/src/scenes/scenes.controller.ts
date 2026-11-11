@@ -7,11 +7,16 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { ScenesService } from './scenes.service';
-import { CreateSceneDto, UpdateSceneDto } from './dto/scene.dto';
+import {
+  CreateSceneDto,
+  UpdateSceneDto,
+  UpsertCondoNoticeDto,
+} from './dto/scene.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { RequirePermission } from '../auth/permission.decorator';
@@ -48,7 +53,50 @@ export class ScenesController {
     return this.scenes.findAll(resolveClientScope(user, clientId));
   }
 
-  /** Cena ativa do condomínio (agenda condo de maior prioridade). */
+  /** Lista avisos condo (grupo + telas) com playlist e tamanhos ideais. */
+  @Get('condo/notices')
+  @RequirePermission('scenes.view')
+  async listCondoNotices(
+    @CurrentUser() user: {
+      role: string;
+      clientId: string | null;
+      actingAsClient?: boolean;
+    },
+  ) {
+    const client = await requireCondoClient(this.prisma, user);
+    return this.scenes.listCondoNotices(client.id);
+  }
+
+  /** Upsert aviso Stories para grupo ou tela. */
+  @Put('condo/notices')
+  @RequirePermission('scenes.edit')
+  async upsertCondoNotice(
+    @Body() dto: UpsertCondoNoticeDto,
+    @CurrentUser() user: {
+      userId: string;
+      role: string;
+      clientId: string | null;
+      actingAsClient?: boolean;
+    },
+  ) {
+    const client = await requireCondoClient(this.prisma, user);
+    const result = await this.scenes.upsertCondoNotice(client.id, dto);
+    await this.history.create({
+      clientId: client.id,
+      userId: user.userId,
+      action: 'condo_media_changed',
+      summary: `Aviso atualizado (${dto.mediaIds.length} story(ies))`,
+      detailsJson: {
+        groupId: dto.groupId ?? null,
+        deviceId: dto.deviceId ?? null,
+        mediaIds: dto.mediaIds,
+        durationMs: dto.durationMs ?? 10000,
+      },
+    });
+    return result;
+  }
+
+  /** Cena ativa do condomínio (compat). */
   @Get('condo/active')
   @RequirePermission('scenes.view')
   async activeCondoScene(
@@ -59,35 +107,22 @@ export class ScenesController {
     },
   ) {
     const client = await requireCondoClient(this.prisma, user);
-    const schedule = await this.prisma.schedule.findFirst({
-      where: {
-        clientId: client.id,
-        channel: 'condo_notice',
-        active: true,
-        scene: { active: true },
-      },
-      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
-      include: {
-        device: { select: { id: true, name: true } },
-        scene: {
-          include: {
-            layout: true,
-            zones: { include: { media: true } },
-          },
-        },
-      },
-    });
-    // Não retornar `null` puro: o Nest envia body vazio e o front quebra no res.json().
-    if (!schedule) {
+    const { notices } = await this.scenes.listCondoNotices(client.id);
+    const first = notices[0];
+    if (!first) {
       return { schedule: null, scene: null };
     }
+    const scene = await this.scenes.findOne(first.sceneId);
     return {
       schedule: {
-        id: schedule.id,
-        name: schedule.name,
-        device: schedule.device,
+        id: first.scheduleId,
+        name: first.name,
+        device: first.device,
+        group: first.group,
+        groupId: first.groupId,
+        deviceId: first.deviceId,
       },
-      scene: schedule.scene,
+      scene,
     };
   }
 
@@ -127,7 +162,6 @@ export class ScenesController {
       const client = await requireCondoClient(this.prisma, user);
       if (scene.clientId !== client.id) throw new ForbiddenException();
 
-      // Condomínio só pode trocar mídia das zonas condo da cena ativa
       const active = await this.prisma.schedule.findFirst({
         where: {
           clientId: client.id,
@@ -155,55 +189,51 @@ export class ScenesController {
       if (condoUpdates.length === 0) {
         throw new ForbiddenException('Nenhuma zona de condomínio válida');
       }
-      // Preserva zonas de ads / outras — só troca mídia das zonas condo
-      const byKey = new Map<string, string | null>(
-        scene.zones.map((z) => [z.zoneKey, z.mediaId ?? null]),
-      );
-      const previousCondo = condoUpdates.map((z) => ({
-        zoneKey: z.zoneKey,
-        mediaId: byKey.get(z.zoneKey) ?? null,
-      }));
-      for (const z of condoUpdates) {
-        byKey.set(z.zoneKey, z.mediaId ?? null);
-      }
-      const zones = [...byKey.entries()].map(([zoneKey, mediaId]) => ({
-        zoneKey,
-        mediaId,
-      }));
-      const updated = await this.scenes.update(id, { zones });
 
-      const newMediaId = condoUpdates[0]?.mediaId ?? null;
-      const oldMediaId = previousCondo[0]?.mediaId ?? null;
-      const mediaIds = [oldMediaId, newMediaId].filter(
-        (v): v is string => Boolean(v),
+      type ZonePatch = {
+        mediaId: string | null;
+        items?: Array<{ mediaId: string; durationMs?: number }>;
+      };
+      const byKey = new Map<string, ZonePatch>(
+        scene.zones.map((z) => [
+          z.zoneKey,
+          {
+            mediaId: z.mediaId ?? null,
+            items: z.items?.map((it) => ({
+              mediaId: it.mediaId,
+              durationMs: it.durationMs,
+            })),
+          },
+        ]),
       );
-      const medias = mediaIds.length
-        ? await this.prisma.media.findMany({
-            where: { id: { in: mediaIds } },
-            select: { id: true, name: true, url: true },
-          })
-        : [];
-      const byId = new Map(medias.map((m) => [m.id, m]));
-      const from = oldMediaId ? byId.get(oldMediaId) : null;
-      const to = newMediaId ? byId.get(newMediaId) : null;
+      for (const z of condoUpdates) {
+        byKey.set(z.zoneKey, {
+          mediaId: z.mediaId ?? z.items?.[0]?.mediaId ?? null,
+          items: z.items,
+        });
+      }
+      const zones = [...byKey.entries()].map(([zoneKey, val]) => ({
+        zoneKey,
+        mediaId: val.mediaId,
+        items: val.items,
+      }));
+      const updated = await this.scenes.update(id, {
+        zones,
+        durationMs: dto.durationMs,
+      });
 
       await this.history.create({
         clientId: client.id,
         userId: user.userId,
         action: 'condo_media_changed',
-        summary: to
-          ? `Aviso atualizado para “${to.name}”`
-          : 'Aviso do condomínio atualizado',
+        summary: 'Aviso do condomínio atualizado',
         detailsJson: {
           sceneId: scene.id,
           sceneName: scene.name,
           scheduleId: active.id,
-          fromMediaId: oldMediaId,
-          fromMediaName: from?.name ?? null,
-          fromMediaUrl: from?.url ?? null,
-          toMediaId: newMediaId,
-          toMediaName: to?.name ?? null,
-          toMediaUrl: to?.url ?? null,
+          mediaIds: condoUpdates.flatMap(
+            (z) => z.items?.map((i) => i.mediaId) ?? (z.mediaId ? [z.mediaId] : []),
+          ),
         },
       });
 
