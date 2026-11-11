@@ -1,0 +1,17 @@
+# AsiaRF AWHUSB-001 (HaLowFly, USB 3905:a020) — aparece como Ethernet CDC-NCM.
+# O rádio HaLow roda no firmware do dongle; no Linux é só uma NIC USB com DHCP.
+[Match]
+Driver=cdc_ncm
+Name=enu*
+
+[Link]
+RequiredForOnline=no
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+# Cabo (end0, métrica padrão 1024 → ajustada em 20-wired.network) tem prioridade;
+# HaLow assume a rota padrão quando o cabo não está ligado.
+RouteMetric=600

@@ -1,0 +1,32 @@
+#!/bin/sh
+# Splash do boot: desenha o logo da LEDE direto no framebuffer (/dev/fb0) logo
+# no início do systemd, e ele fica na tela até o cage/LEDE Edge assumir o HDMI.
+# Imagens pré-renderizadas (BGRA, 32 bpp) por resolução e rotação em
+# /usr/share/lede-edge/splash/splash-<W>x<H>-<graus>.bgra (make-splash.sh).
+FB=/dev/fb0
+SYS=/sys/class/graphics/fb0
+DIR=/usr/share/lede-edge/splash
+[ -w "$FB" ] && [ -r "$SYS/virtual_size" ] || exit 0
+
+size=$(tr ',' 'x' < "$SYS/virtual_size")
+w=${size%x*}
+stride=$(cat "$SYS/stride" 2>/dev/null || echo 0)
+[ "$(cat "$SYS/bits_per_pixel" 2>/dev/null)" = 32 ] || exit 0
+[ "$stride" = $((w * 4)) ] || exit 0
+
+# Orientação da tela (montagem física), salva pelo app em device.json
+deg=0
+case "$(grep -o '"orientation": *"[a-z_]*"' /var/lib/lede-edge/device.json 2>/dev/null)" in
+  *'"portrait"') deg=90 ;;
+  *landscape_reverse*) deg=180 ;;
+  *portrait_reverse*) deg=270 ;;
+esac
+
+img="$DIR/splash-$size-$deg.bgra"
+[ -f "$img" ] || img="$DIR/splash-$size-0.bgra"
+[ -f "$img" ] || exit 0
+
+# Cursor do console fora (além de vt.global_cursor_default=0 no cmdline)
+echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null || true
+cat "$img" > "$FB" 2>/dev/null || true
+exit 0

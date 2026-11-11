@@ -1,0 +1,68 @@
+#!/bin/bash
+# Primeiro boot de um box gravado com a imagem LEDE Edge (roda uma única vez):
+#   0. pós-instalação dos pacotes (sysusers, ldconfig, CA, caches GTK/fontes…);
+#   1. expande a partição raiz até o fim do cartão SD;
+#   2. hostname único "lede-<código>" (mesmo código mostrado na TV / no Cloud);
+#   3. bytecode Python compilado no próprio box;
+#   4. chaves SSH próprias do box (a imagem não carrega chaves).
+# O machine-id é gerado pelo systemd (a imagem leva /etc/machine-id vazio).
+set -u
+FLAG=/etc/lede-edge/firstboot
+[ -f "$FLAG" ] || exit 0
+log() { echo "[lede-firstboot] $*"; }
+
+# 0. Pós-instalação dos pacotes (a imagem é montada em x86 sem rodar os hooks
+#    ARM do pacman). Equivalente aos hooks em /usr/share/libalpm/hooks.
+log "pós-instalação dos pacotes"
+systemd-sysusers >/dev/null 2>&1 || log "sysusers falhou"
+systemd-tmpfiles --create >/dev/null 2>&1 || true
+ldconfig 2>/dev/null || true
+update-ca-trust 2>/dev/null || log "update-ca-trust falhou"
+if [ -x /usr/share/libalpm/scripts/40-fontconfig-config ]; then
+  find /usr/share/fontconfig/conf.default -mindepth 1 2>/dev/null \
+    | /usr/share/libalpm/scripts/40-fontconfig-config /etc/fonts/conf.d >/dev/null 2>&1 || true
+fi
+fc-cache -s >/dev/null 2>&1 || true
+update-mime-database /usr/share/mime >/dev/null 2>&1 || true
+glib-compile-schemas /usr/share/glib-2.0/schemas >/dev/null 2>&1 || true
+gio-querymodules /usr/lib/gio/modules >/dev/null 2>&1 || true
+gdk-pixbuf-query-loaders --update-cache >/dev/null 2>&1 || log "gdk-pixbuf loaders falhou"
+for d in /usr/lib/gtk-4.0/4.0.0/*/; do [ -d "$d" ] && gio-querymodules "$d" >/dev/null 2>&1; done
+dconf update >/dev/null 2>&1 || true
+gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
+systemd-hwdb update >/dev/null 2>&1 || true
+journalctl --update-catalog >/dev/null 2>&1 || true
+
+# 1. Expandir rootfs (última partição do cartão; dados preservados)
+ROOTDEV=$(findmnt -no SOURCE /)
+DISK="/dev/$(lsblk -no PKNAME "$ROOTDEV" | head -1)"
+PART=$(cat "/sys/class/block/$(basename "$ROOTDEV")/partition" 2>/dev/null || echo "")
+if [ -b "$DISK" ] && [ -n "$PART" ]; then
+  log "expandindo $ROOTDEV (partição $PART de $DISK)"
+  if echo ", +" | sfdisk -N "$PART" --no-reread --force "$DISK" >/dev/null 2>&1; then
+    partx -u -n "$PART" "$DISK" || true
+    resize2fs "$ROOTDEV" || log "resize2fs falhou (tenta de novo no próximo boot)"
+  else
+    log "sfdisk falhou — mantendo tamanho atual"
+  fi
+fi
+
+# 2. Hostname a partir da identidade de hardware (SID do SoC)
+CODE=$(PYTHONPATH=/opt/lede-edge/current python3 -c \
+  'from lede_edge import identity as i; print(i.registration_code(i.hardware_id()).lower())' 2>/dev/null)
+if [ -n "$CODE" ]; then
+  echo "lede-$CODE" > /etc/hostname
+  hostname "lede-$CODE" 2>/dev/null || true
+  log "hostname lede-$CODE"
+fi
+
+# 3. Bytecode do LEDE Edge com o Python do box (a imagem é gerada em x86)
+python3 -m compileall -q "$(readlink -f /opt/lede-edge/current)/lede_edge" >/dev/null 2>&1 \
+  && log "bytecode compilado"
+
+# 4. Chaves SSH do próprio box
+ssh-keygen -A >/dev/null 2>&1 && log "chaves SSH geradas"
+
+rm -f "$FLAG"
+sync
+log "concluído"

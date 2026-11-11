@@ -1,0 +1,35 @@
+[Unit]
+Description=LEDE Edge (player kiosk)
+Documentation=https://github.com/lucioccosta/lede-ads/tree/main/apps/edge-linux
+# NÃO espera network-online: sem rede o box precisa mostrar o logo/código e
+# tocar o cache imediatamente; o app tenta o Cloud sozinho, para sempre.
+# Sobe CEDO (DefaultDependencies=no): não espera basic.target/udev, que no SD
+# lento levam ~20 s. Só precisa da raiz montada, do journal e do seatd.
+DefaultDependencies=no
+Wants=seatd.service
+After=seatd.service systemd-remount-fs.service systemd-journald.socket lede-splash.service lede-firstboot.service
+Before=shutdown.target
+Conflicts=shutdown.target
+# Ocupa o tty1 no lugar do login de console
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/lede-edge/launch
+Restart=always
+RestartSec=3
+# O app envia WATCHDOG=1 a cada heartbeat do loop; travou → systemd reinicia
+WatchdogSec=180
+NotifyAccess=all
+RuntimeDirectory=lede-edge
+RuntimeDirectoryMode=0700
+Environment=XDG_RUNTIME_DIR=/run/lede-edge
+Environment=LIBSEAT_BACKEND=seatd
+TTYPath=/dev/tty1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=LEDE primeiro boot (pós-instalação, expande SD, hostname, chaves SSH)
+ConditionPathExists=/etc/lede-edge/firstboot
+DefaultDependencies=no
+After=systemd-remount-fs.service
+# Hostname antes da rede (vai no DHCP) e chaves antes do sshd
+Before=network-pre.target sshd.service seatd.service lede-edge.service systemd-sysusers.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/lede-edge/firstboot
+RemainAfterExit=yes
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

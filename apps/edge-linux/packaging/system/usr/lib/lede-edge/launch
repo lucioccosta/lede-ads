@@ -1,0 +1,64 @@
+#!/bin/bash
+# Lançador do LEDE Edge Linux — parte da IMAGEM, não é atualizado pela OTA.
+#
+# 1. Se há uma OTA pendente (ota/pending.json), conta a tentativa de start.
+#    Após MAX_ATTEMPTS starts sem o app confirmar saúde, volta current → previous.
+# 2. Sobe o compositor kiosk (cage) com o player Python do release atual.
+set -u
+
+ROOT="${LEDE_INSTALL_ROOT:-/opt/lede-edge}"
+STATE="${LEDE_STATE_DIR:-/var/lib/lede-edge}"
+OTA="$STATE/ota"
+PENDING="$OTA/pending.json"
+ATTEMPTS="$OTA/attempts"
+MAX_ATTEMPTS=3
+
+log() { echo "[lede-launch] $*"; }
+
+mkdir -p "$OTA"
+
+if [ -f "$PENDING" ]; then
+  n=$(cat "$ATTEMPTS" 2>/dev/null || echo 0)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  n=$((n + 1))
+  echo "$n" > "$ATTEMPTS"
+  sync
+  log "OTA pendente: tentativa $n/$MAX_ATTEMPTS"
+  if [ "$n" -gt "$MAX_ATTEMPTS" ]; then
+    prev=$(readlink -f "$ROOT/previous" 2>/dev/null || true)
+    if [ -n "$prev" ] && [ -f "$prev/lede_edge/__main__.py" ]; then
+      log "Versão nova não confirmou saúde — rollback para $(basename "$prev")"
+      ln -sfn "$(realpath --relative-to="$ROOT" "$prev")" "$ROOT/current.new"
+      mv -Tf "$ROOT/current.new" "$ROOT/current"
+      {
+        echo "{\"at\": \"$(date -u +%FT%TZ)\", \"pending\": $(cat "$PENDING"), \"restored\": \"$(basename "$prev")\"}"
+      } > "$OTA/last-rollback.json"
+    else
+      log "Sem release anterior válido — mantendo versão atual"
+    fi
+    rm -f "$PENDING" "$ATTEMPTS"
+    sync
+  fi
+fi
+
+# Resolve o symlink AGORA: uma OTA durante a execução troca current,
+# mas o processo em execução continua no diretório antigo até reiniciar.
+RELEASE=$(readlink -f "$ROOT/current")
+if [ ! -f "$RELEASE/lede_edge/__main__.py" ]; then
+  log "Nenhum release instalado em $ROOT/current"
+  exit 1
+fi
+log "Iniciando release $(cat "$RELEASE/VERSION" 2>/dev/null || echo '?') ($RELEASE)"
+
+export PYTHONPATH="$RELEASE"
+# Bytecode vem pré-compilado no release (install.sh / OTA / imagem)
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONUNBUFFERED=1
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/lede-edge}"
+export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
+export WLR_LIBINPUT_NO_DEVICES=1
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+
+cd "$RELEASE" || exit 1
+# -s: permite trocar de VT (debug com teclado); cage encerra quando o app sai.
+exec cage -s -- /usr/lib/lede-edge/session
