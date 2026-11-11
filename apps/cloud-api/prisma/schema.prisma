@@ -311,9 +311,51 @@ model Device {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  schedules Schedule[]
-  proofs    ProofOfPlay[]
-  commands  DeviceCommand[]
+  schedules    Schedule[]
+  proofs       ProofOfPlay[]
+  commands     DeviceCommand[]
+  registration DeviceRegistration?
+}
+
+enum DeviceRegistrationStatus {
+  pending
+  approved
+  rejected
+}
+
+/**
+ * Auto-registro do Edge: o box se apresenta sozinho (hardwareId + segredo)
+ * e a LEDE aceita ou recusa no Cloud. Aceito → cria/vincula um Device e o
+ * Edge recebe o deviceToken na próxima consulta de status.
+ */
+model DeviceRegistration {
+  id           String                   @id @default(cuid())
+  /** Identidade estável do hardware (ex.: SID do SoC Allwinner). */
+  hardwareId   String                   @unique
+  /** sha256 do segredo gerado pelo Edge; exigido para consultar o status. */
+  secretHash   String
+  /** Código curto exibido na tela do box para conferência visual. */
+  code         String
+  status       DeviceRegistrationStatus @default(pending)
+  hostname     String?
+  model        String?
+  macAddress   String?
+  ipAddress    String?
+  externalIp   String?
+  appVersion   String?
+  appFlavor    String?
+  screenWidth  Int?
+  screenHeight Int?
+  rejectReason String?
+  deviceId     String?                  @unique
+  device       Device?                  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  decidedById  String?
+  lastSeenAt   DateTime                 @default(now())
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  @@index([status, lastSeenAt])
 }
 
 model DeviceCommand {

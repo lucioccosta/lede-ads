@@ -31,6 +31,8 @@ import {
   EdgeReleaseService,
   parseVersionCore,
 } from '../devices/edge-release.service';
+import { DeviceRegistrationsService } from '../devices/device-registrations.service';
+import { RegisterEdgeDto } from '../devices/dto/device-registration.dto';
 
 function clientIp(req: Request): string | undefined {
   const xf = req.headers['x-forwarded-for'];
@@ -49,7 +51,29 @@ export class EdgeController {
     private readonly edge: EdgeService,
     private readonly storage: StorageService,
     private readonly releases: EdgeReleaseService,
+    private readonly registrations: DeviceRegistrationsService,
   ) {}
+
+  /** Auto-registro: Edge sem token se apresenta; LEDE aceita/recusa no Cloud. */
+  @Post('register')
+  register(@Body() dto: RegisterEdgeDto, @Req() req: Request) {
+    return this.registrations.register(dto, clientIp(req));
+  }
+
+  /**
+   * Edge consulta a decisão. Identidade/segredo vão em headers (não em query,
+   * para não parar em logs de proxy). Aprovado → mesmo payload do /edge/pair.
+   */
+  @Get('register/status')
+  registerStatus(
+    @Headers('x-hardware-id') hardwareId: string | undefined,
+    @Headers('x-registration-secret') secret: string | undefined,
+  ) {
+    if (!hardwareId || !secret) {
+      throw new UnauthorizedException('Identidade de registro obrigatória');
+    }
+    return this.registrations.status(hardwareId, secret);
+  }
 
   @Post('pair')
   pair(@Body() dto: PairDeviceDto) {
