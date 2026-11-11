@@ -122,6 +122,26 @@ Garanta que o bucket permita leitura pública (ou URL assinada) para o Edge baix
 
 Backup periódico do Postgres; objetos ficam no provedor S3.
 
+## 7.1 Auto-registro do Edge e vídeos (desde a migration `20261111040000`)
+
+- A migration `device_self_registration` roda sozinha no start da API
+  (`prisma migrate deploy` no entrypoint).
+- **Recomendado:** `EDGE_ENROLLMENT_KEY=<segredo-longo>` no Environment da API
+  (e a mesma chave no Edge: `enrollment_key` no `edge.conf` / `--enrollment-key`
+  no build da imagem Linux). Sem ela, qualquer box que alcance a API aparece em
+  "Aguardando aprovação" (não toca nada sem aprovação).
+- **Vídeos antigos** (uma vez, após o deploy): normaliza as dimensões para o
+  decoder de hardware do Edge Linux e remove áudio. Idempotente.
+
+```bash
+docker compose -f docker-compose.dokploy.yml exec api node dist/src/scripts/normalize-videos.js --dry-run
+docker compose -f docker-compose.dokploy.yml exec api node dist/src/scripts/normalize-videos.js
+```
+
+- OTA do Edge Linux: publique `lede-edge-sb3000-linux-vX.Y.Z.tar.zst` nas
+  GitHub Releases (workflow **Edge SB3000 Linux Release**). Detalhes em
+  [`EDGE_LINUX.md`](EDGE_LINUX.md).
+
 ## 8. Troubleshooting
 
 **Web chama API em localhost**  

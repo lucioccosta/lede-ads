@@ -1,6 +1,7 @@
 # Edge Android — guia operacional
 
 Player kiosk para **Proeletronic SB3000** (Android 10+).
+Versão Linux (Arch no SD, dongle HaLow): [`EDGE_LINUX.md`](EDGE_LINUX.md).
 
 ## Targets e builds
 
@@ -26,13 +27,34 @@ APKs **não** vão para o Git. Em produção, publique **apenas** `lede-edge-sb3
 
 ## Kiosk
 
-Após o pairing, a `PlayerActivity`:
+## Auto-registro (sem código de pairing)
+
+Desde a 0.5.17 (Android) e 0.1.0 (Linux) o Edge **se registra sozinho**:
+
+1. Sem token, o box chama `POST /edge/register` com um `hardwareId` estável
+   (Android: `ANDROID_ID`; Linux: SID do SoC) e um segredo próprio.
+2. A TV mostra **só o logo e o código do box** (6 caracteres, calculado
+   localmente — aparece mesmo sem rede).
+3. No Cloud, **Telas → Aguardando aprovação**: confira o código e clique em
+   **Aceitar** (nome, condomínio, grupo, tipo, orientação) ou **Recusar**.
+4. O box consulta `GET /edge/register/status` a cada 10 s; aceito → recebe o
+   token e começa a tocar.
+
+Sem rede / Cloud fora: o box tenta **para sempre** (backoff 5 s → 60 s).
+**Re-parear** ou excluir a tela no Cloud devolve o box para "Aguardando aprovação".
+Opcional em produção: `EDGE_ENROLLMENT_KEY` na API (mesma chave em
+`enrollment_key` no `edge.conf` do Linux) para só boxes da LEDE se registrarem.
+
+> Boxes Android ≤ 0.5.16 ainda usam o código de pairing manual até receberem a OTA.
+> O Cloud mantém `POST /edge/pair` e a criação de códigos para eles.
+
+Após o registro, a `PlayerActivity`:
 
 - entra em modo imersivo
 - chama `startLockTask()`
 - registra-se como app **Home** (launcher)
 
-A `RootActivity` é a entrada MAIN/HOME/LAUNCHER: encaminha para Player (pareado) ou Pairing.
+A `RootActivity` é a entrada MAIN/HOME/LAUNCHER: encaminha para Player (registrado) ou para a tela de auto-registro.
 
 **Auto-start após reboot:** o `BootReceiver` escuta `BOOT_COMPLETED` e `QUICKBOOT_POWERON` e abre o app com atraso de ~8 s. Defina o LEDE Edge como **launcher padrão**.
 
@@ -47,7 +69,7 @@ Abre o launcher nativo **Nova** (`com.a.nova.launcher`) e remove a task do LEDE.
 
 Aperte **Volume −** **10** vezes seguidas (em até 5 s).
 
-Limpa o token local e abre a tela de pairing (equivalente ao “Re-parear” do Cloud, no Edge). Toast de progresso aos 5 e 8 toques.
+Limpa o token local e volta para a tela de auto-registro (logo + código). Toast de progresso aos 5 e 8 toques.
 
 ### Versões anteriores (sem escape)
 
@@ -150,5 +172,5 @@ base64 -i apps/edge-android/keystore/lede-edge-sideload.jks | pbcopy
 
 1. Ative fontes desconhecidas.
 2. Instale o APK (produção ou `sb3000-fios` / `sb3000-casa` para dev).
-3. Pareie com o código do Cloud.
+3. Aceite o box no Cloud em **Telas → Aguardando aprovação** (confira o código na TV).
 4. Escolha LEDE Edge como launcher **Sempre**.
