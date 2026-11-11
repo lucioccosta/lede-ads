@@ -1,42 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto-registro: o box se apresenta sozinho ao Cloud e espera a LEDE aceitar.
+  Só o logo e o código da tela (calculado localmente — aparece mesmo sem rede).
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#000000"
     android:gravity="center"
     android:orientation="vertical"
-    android:padding="48dp"
-    android:background="#111111">
+    android:padding="48dp">
+
+    <ImageView
+        android:id="@+id/registrationLogo"
+        android:layout_width="320dp"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/lede_logo" />
 
     <TextView
+        android:id="@+id/registrationCode"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="LEDE Edge"
-        android:textColor="#FFFFFF"
-        android:textSize="32sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Digite o código de pairing do Cloud"
-        android:textColor="#AAAAAA" />
-
-    <EditText
-        android:id="@+id/codeInput"
-        android:layout_width="280dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="36dp"
+        android:fontFamily="monospace"
         android:gravity="center"
-        android:hint="ABC123"
-        android:inputType="textCapCharacters"
+        android:includeFontPadding="false"
+        android:letterSpacing="0.15"
         android:textColor="#FFFFFF"
-        android:textColorHint="#666666" />
-
-    <Button
-        android:id="@+id/pairButton"
-        android:layout_width="280dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Parear" />
+        android:textSize="56sp"
+        android:textStyle="bold" />
 </LinearLayout>

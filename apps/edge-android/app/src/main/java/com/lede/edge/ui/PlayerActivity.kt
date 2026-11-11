@@ -257,7 +257,7 @@ class PlayerActivity : AppCompatActivity() {
         if (rePairing || escapingKiosk) return
         rePairing = true
         rePairVolumeDownCount = 0
-        Toast.makeText(this, "Re-pareando… digite o novo código", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Re-registrando no Cloud…", Toast.LENGTH_LONG).show()
         Log.i(TAG, "Re-parear local via Volume− ×$REPAIR_VOLUME_DOWN_COUNT")
         goToPairing()
     }
@@ -855,7 +855,10 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun goToPairing() {
         if (isFinishing || isDestroyed) return
+        // Orientação é a montagem física da TV — sobrevive ao re-pareamento
+        val orientation = store.orientation
         store.clear()
+        store.orientation = orientation
         handler.removeCallbacksAndMessages(null)
         runCatching { stopLockTask() }
         startActivity(
