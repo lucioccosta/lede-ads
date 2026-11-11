@@ -123,12 +123,14 @@ export class DevicesService {
   async listEdgeReleases() {
     const assets = await this.releases.listLatestAssets(true);
     const byFlavor: Record<string, unknown> = {};
-    for (const flavor of ['prod', 'casa', 'fios'] as const) {
+    for (const flavor of ['prod', 'linux', 'casa', 'fios'] as const) {
       byFlavor[flavor] = await this.releases.resolveForFlavor(flavor);
     }
     return {
-      convention: 'lede-edge-{targetId}-v{X.Y.Z}.apk',
+      convention:
+        'lede-edge-{targetId}-v{X.Y.Z}.apk | lede-edge-sb3000-linux-v{X.Y.Z}.tar.zst',
       githubTarget: 'sb3000',
+      githubTargets: ['sb3000', 'sb3000-linux'],
       localTargets: ['sb3000-fios', 'sb3000-casa'],
       assets,
       latestByFlavor: byFlavor,
@@ -363,7 +365,7 @@ export class DevicesService {
       const latest = await this.releases.resolveForFlavor(device.appFlavor);
       if (!latest) {
         throw new BadRequestException(
-          `Nenhum APK Edge encontrado no GitHub para o flavor "${device.appFlavor || 'desconhecido'}". Publique uma release com o asset correto.`,
+          `Nenhum pacote Edge encontrado no GitHub para o flavor "${device.appFlavor || 'desconhecido'}". Publique uma release com o asset correto.`,
         );
       }
       if (

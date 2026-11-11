@@ -13,19 +13,35 @@ import { publicBaseUrl } from '../common/public-url';
 
 /**
  * targetId:
- *   sb3000       — produção (GitHub Releases + OTA)
- *   sb3000-fios  — dev local (pasta releases/ + /edge-apks/) — NÃO GitHub
- *   sb3000-casa  — dev local — NÃO GitHub
+ *   sb3000        — produção Android (GitHub Releases + OTA)
+ *   sb3000-linux  — produção Linux / Arch no SD (GitHub Releases + OTA)
+ *   sb3000-fios   — dev local (pasta releases/ + /edge-apks/) — NÃO GitHub
+ *   sb3000-casa   — dev local — NÃO GitHub
  *
- * Arquivo: lede-edge-{targetId}-v{X.Y.Z}.apk
+ * Arquivo: lede-edge-{targetId}-v{X.Y.Z}.apk (Android)
+ *          lede-edge-sb3000-linux-v{X.Y.Z}.tar.zst (Linux)
  */
-export type EdgeTargetId = 'sb3000' | 'sb3000-fios' | 'sb3000-casa';
+export type EdgeTargetId =
+  | 'sb3000'
+  | 'sb3000-linux'
+  | 'sb3000-fios'
+  | 'sb3000-casa';
+
+export type EdgeFlavor = 'prod' | 'linux' | 'casa' | 'fios';
 
 export const GITHUB_OTA_TARGET: EdgeTargetId = 'sb3000';
 
+/** Targets publicados no GitHub Releases (OTA de produção). */
+export const GITHUB_OTA_TARGETS: EdgeTargetId[] = ['sb3000', 'sb3000-linux'];
+
+/** Extensão do artefato por target. */
+export function artifactExtension(targetId: EdgeTargetId): string {
+  return targetId === 'sb3000-linux' ? '.tar.zst' : '.apk';
+}
+
 export type EdgeReleaseAsset = {
   targetId: EdgeTargetId;
-  flavor: 'prod' | 'casa' | 'fios';
+  flavor: EdgeFlavor;
   versionName: string;
   tagName: string;
   assetName: string;
@@ -73,6 +89,8 @@ export function flavorToTargetId(
       return 'sb3000-casa';
     case 'fios':
       return 'sb3000-fios';
+    case 'linux':
+      return 'sb3000-linux';
     default:
       return 'sb3000';
   }
@@ -81,6 +99,7 @@ export function flavorToTargetId(
 function targetFlavor(targetId: EdgeTargetId): EdgeReleaseAsset['flavor'] {
   if (targetId === 'sb3000-fios') return 'fios';
   if (targetId === 'sb3000-casa') return 'casa';
+  if (targetId === 'sb3000-linux') return 'linux';
   return 'prod';
 }
 
@@ -91,10 +110,26 @@ function classifyGithubAsset(
   publishedAt: string,
   size: number,
 ): EdgeReleaseAsset | null {
-  if (!name.toLowerCase().endsWith('.apk')) return null;
   const lower = name.toLowerCase();
   const versionName =
     parseVersionCore(name) || parseVersionCore(tagName) || tagName;
+
+  if (lower.startsWith('lede-edge-sb3000-linux-v')) {
+    if (!lower.endsWith('.tar.zst')) return null;
+    return {
+      targetId: 'sb3000-linux',
+      flavor: 'linux',
+      versionName,
+      tagName,
+      assetName: name,
+      apkUrl: url,
+      publishedAt,
+      sizeBytes: size,
+      source: 'github',
+    };
+  }
+
+  if (!lower.endsWith('.apk')) return null;
 
   if (
     lower.startsWith('lede-edge-sb3000-fios-v') ||
@@ -155,14 +190,14 @@ export class EdgeReleaseService {
   ): Promise<EdgeReleaseAsset | null> {
     const targetId = flavorToTargetId(flavor);
 
-    if (targetId === GITHUB_OTA_TARGET) {
+    if (GITHUB_OTA_TARGETS.includes(targetId)) {
       const github = await this.fetchGithubCached(false);
       const fromGh = this.pickNewest(
-        github.filter((a) => a.targetId === GITHUB_OTA_TARGET),
+        github.filter((a) => a.targetId === targetId),
       );
       if (fromGh) return fromGh;
-      // fallback local pasta sb3000/
-      return this.pickNewest(this.scanLocalTarget(GITHUB_OTA_TARGET));
+      // fallback local pasta releases/edge/{targetId}/
+      return this.pickNewest(this.scanLocalTarget(targetId));
     }
 
     // Dev local: só pasta releases/edge/{targetId}/
@@ -252,6 +287,7 @@ export class EdgeReleaseService {
   private scanAllLocal(): EdgeReleaseAsset[] {
     const targets: EdgeTargetId[] = [
       'sb3000',
+      'sb3000-linux',
       'sb3000-fios',
       'sb3000-casa',
     ];
@@ -263,10 +299,11 @@ export class EdgeReleaseService {
     if (!existsSync(dir)) return [];
 
     const prefix = `lede-edge-${targetId}-v`;
+    const ext = artifactExtension(targetId);
     const out: EdgeReleaseAsset[] = [];
 
     for (const name of readdirSync(dir)) {
-      if (!name.toLowerCase().endsWith('.apk')) continue;
+      if (!name.toLowerCase().endsWith(ext)) continue;
       if (!name.toLowerCase().startsWith(prefix.toLowerCase())) continue;
       const full = join(dir, name);
       const st = statSync(full);
@@ -375,7 +412,7 @@ export class EdgeReleaseService {
       }
     }
     this.logger.log(
-      `GitHub releases: ${out.length} APK(s) sb3000 (produção) em ${repo}` +
+      `GitHub releases: ${out.length} artefato(s) Edge de produção em ${repo}` +
         (token ? '' : ' [sem GITHUB_TOKEN — limite 60 req/h]'),
     );
     return out;

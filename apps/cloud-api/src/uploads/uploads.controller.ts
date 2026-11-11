@@ -51,8 +51,10 @@ export class UploadsController {
     }
     if (!file) throw new BadRequestException('Arquivo obrigatório');
 
-    // Vídeos: remove áudio antes de gravar (anúncios silent no Edge)
-    const processed = await this.videoProcess.stripAudioIfVideo(file);
+    // Vídeos: remove áudio (anúncios silent) e normaliza dimensões para o
+    // decoder de hardware do Edge Linux (largura %32, altura %16)
+    const video = await this.videoProcess.processVideo(file);
+    const processed = video.file;
     const stored = await this.storage.putMulterFile(processed, 'media');
     const type = processed.mimetype.startsWith('video/') ? 'video' : 'image';
 
@@ -65,6 +67,13 @@ export class UploadsController {
       originalName: processed.originalname,
       key: stored.key,
       audioStripped: type === 'video',
+      ...(type === 'video'
+        ? {
+            normalized: video.normalized,
+            width: video.width,
+            height: video.height,
+          }
+        : {}),
     };
   }
 }

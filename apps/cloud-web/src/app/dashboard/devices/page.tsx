@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { api, resolveMediaUrl } from "@/lib/api";
+import { api, can, getStoredUser, resolveMediaUrl } from "@/lib/api";
+import { DeviceRegistrations } from "@/components/device-registrations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -297,6 +298,11 @@ export default function DevicesPage() {
   const [editGroupId, setEditGroupId] = useState("none");
   const [editScreenTypeId, setEditScreenTypeId] = useState("none");
   const [savingEdit, setSavingEdit] = useState(false);
+  // AppShell só renderiza páginas no cliente (após ler o usuário), sem SSR
+  const [canManage] = useState(() => {
+    const user = getStoredUser();
+    return user ? can(user, "devices.manage") : false;
+  });
 
   async function load() {
     const [devices, clientList, types, groups] = await Promise.all([
@@ -788,6 +794,14 @@ export default function DevicesPage() {
         </Dialog>
       </div>
 
+      <DeviceRegistrations
+        clients={clients}
+        screenTypes={screenTypes}
+        deviceGroups={deviceGroups}
+        canManage={canManage}
+        onApproved={() => void load()}
+      />
+
       <ListToolbar
         search={search}
         onSearchChange={setSearch}
@@ -1123,11 +1137,15 @@ export default function DevicesPage() {
                   <MetaRow
                     icon={PackageIcon}
                     label="App"
-                    value={
+                    value={`${
                       detail.updateAvailable
                         ? `${detail.appVersion ?? "—"} → ${detail.latestEdgeVersion}`
                         : (detail.appVersion ?? "—")
-                    }
+                    }${
+                      detail.appFlavor
+                        ? ` · ${detail.appFlavor === "linux" ? "Linux" : "Android"}`
+                        : ""
+                    }`}
                   />
                   {detail.updateAvailable ? (
                     <Badge variant="default">Atualização disponível</Badge>
