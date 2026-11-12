@@ -11,7 +11,12 @@
 #       --package lede-edge-sb3000-linux-vX.Y.Z.tar.zst \
 #       --out ./out --root-hash '$6$...'                  # openssl passwd -6
 #       [--api https://api.lede.tv.br/api] [--enrollment-key KEY]
-#       [--size-mib 3584] [--pkg-cache DIR]               # reaproveita pacotes
+#       [--size-mib 3584] [--pkg-cache DIR] [--offline]
+#
+# Cache de pacotes (padrão: releases/edge/sb3000-linux/pkgcache, fora do git):
+# guarda os .pkg.tar.*, as entradas do banco do pacman e a lista `pacman -Q` do
+# box de referência (ref-pkgs.txt). Com --offline o box não é acessado: tudo
+# vem do cache, que precisa ter sido preenchido por um build online antes.
 #
 # Etapas:
 #   1. MiniArch → bootloader, partição BOOT (FAT) e rootfs (ext4 → diretório);
@@ -23,8 +28,10 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"     # packaging/
+REPO="$(cd "$HERE/../../.." && pwd)"
 IMGDIR="$HERE/image"
-BASE="" PKG="" OUT="" ROOT_HASH="" ENROLL="" SIZE_MIB=3584 PKG_CACHE=""
+BASE="" PKG="" OUT="" ROOT_HASH="" ENROLL="" SIZE_MIB=3584 OFFLINE=0
+PKG_CACHE="$REPO/releases/edge/sb3000-linux/pkgcache"
 API="https://api.lede.tv.br/api"
 SSH="${SSH:-ssh root@192.168.10.188}"
 BOOT_START=32768 BOOT_SECTORS=1022360 ROOT_START=1056768   # layout da MiniArch
@@ -40,6 +47,7 @@ while [ $# -gt 0 ]; do
     --enrollment-key) ENROLL="$2"; shift 2 ;;
     --size-mib) SIZE_MIB="$2"; shift 2 ;;
     --pkg-cache) PKG_CACHE="$2"; shift 2 ;;
+    --offline) OFFLINE=1; shift ;;
     *) echo "opção desconhecida: $1" >&2; exit 2 ;;
   esac
 done
@@ -76,12 +84,19 @@ rm -f "$WORK/base-root.ext4"
 [ -d "$ROOTFS/var/lib/pacman/local" ] || { echo "rootfs da base inválido" >&2; exit 1; }
 
 echo "==> [2/6] Pacotes (cage, mesa, gtk4, gstreamer, imv… + atualizações)"
-CACHE="${PKG_CACHE:-$WORK/pkgcache}"
-mkdir -p "$CACHE/pkgs" "$CACHE/localdb"
+mkdir -p "$PKG_CACHE/pkgs" "$PKG_CACHE/localdb"
+CACHE="$(cd "$PKG_CACHE" && pwd)"
+echo "   cache: $CACHE"
 for d in "$ROOTFS"/var/lib/pacman/local/*/; do
   awk '/^%NAME%/{getline n} /^%VERSION%/{getline v} END{print n, v}' "$d/desc"
 done | sort > "$WORK/base-pkgs.txt"
-$SSH 'pacman -Q' | sort > "$WORK/ref-pkgs.txt"
+if [ "$OFFLINE" = 1 ]; then
+  [ -s "$CACHE/ref-pkgs.txt" ] || { echo "--offline: $CACHE/ref-pkgs.txt não existe (rode um build online antes)" >&2; exit 1; }
+  sort "$CACHE/ref-pkgs.txt" > "$WORK/ref-pkgs.txt"
+else
+  $SSH 'pacman -Q' | sort > "$WORK/ref-pkgs.txt"
+  [ -s "$WORK/ref-pkgs.txt" ] || { echo "pacman -Q vazio no box de referência" >&2; exit 1; }
+fi
 python3 - "$WORK/base-pkgs.txt" "$WORK/ref-pkgs.txt" > "$WORK/delta.txt" <<'PY'
 import sys
 base = dict(l.split() for l in open(sys.argv[1]) if l.strip())
@@ -99,12 +114,21 @@ missing="$WORK/missing.txt"; : > "$missing"
 while read -r n v; do
   ls "$CACHE/pkgs/$n-$v-"*.pkg.tar.* >/dev/null 2>&1 && [ -d "$CACHE/localdb/$n-$v" ] || echo "$n $v" >> "$missing"
 done < "$WORK/delta.txt"
+if [ -s "$missing" ] && [ "$OFFLINE" = 1 ]; then
+  echo "--offline: faltam no cache:" >&2; sed 's/^/   /' "$missing" >&2; exit 1
+fi
 if [ -s "$missing" ]; then
   echo "   baixando $(wc -l < "$missing") do box de referência"
   $SSH 'cd /var/cache/pacman/pkg && while read n v; do ls $n-$v-*.pkg.tar.* 2>/dev/null | grep -v "\.sig$" | head -1; done | tar -cf - -T -' \
     < "$missing" | tar -C "$CACHE/pkgs" -xf -
   awk '{print $1"-"$2}' "$missing" | $SSH 'cd /var/lib/pacman/local && tar -cf - -T -' | tar -C "$CACHE/localdb" -xf -
 fi
+while read -r n v; do
+  ls "$CACHE/pkgs/$n-$v-"*.pkg.tar.* >/dev/null 2>&1 && [ -d "$CACHE/localdb/$n-$v" ] \
+    || { echo "pacote $n-$v não foi obtido" >&2; exit 1; }
+done < "$WORK/delta.txt"
+# Cache completo para este conjunto: grava a lista para builds --offline
+[ "$OFFLINE" = 1 ] || cp "$WORK/ref-pkgs.txt" "$CACHE/ref-pkgs.txt"
 mkdir -p "$WORK/apply/pkgs" "$WORK/apply/localdb"
 while read -r n v; do
   ln -s "$(ls "$CACHE/pkgs/$n-$v-"*.pkg.tar.* | grep -v '\.sig$' | head -1)" "$WORK/apply/pkgs/"

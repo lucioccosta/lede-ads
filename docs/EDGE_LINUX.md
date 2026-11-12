@@ -196,7 +196,20 @@ apps/edge-linux/packaging/image/build-image.sh \
   --package releases/edge/sb3000-linux/lede-edge-sb3000-linux-v0.1.0.tar.zst \
   --out releases/edge/sb3000-linux \
   --root-hash '<hash $6$...>' \
-  [--enrollment-key <chave>] [--pkg-cache <dir>]
+  [--enrollment-key <chave>] [--pkg-cache <dir>] [--offline]
+```
+
+**Cache de pacotes:** fica em `releases/edge/sb3000-linux/pkgcache/` (fora do
+git; outro lugar com `--pkg-cache`): `pkgs/` (`.pkg.tar.*`), `localdb/` (banco
+do pacman) e `ref-pkgs.txt` (`pacman -Q` do box de referência). Um build online
+preenche o cache; com `--offline` o box não é acessado e tudo vem dele (o build
+falha listando o que faltar). Para copiar o cache inteiro do box de uma vez:
+
+```bash
+C=releases/edge/sb3000-linux/pkgcache; mkdir -p $C/pkgs $C/localdb
+ssh root@BOX 'cd /var/cache/pacman/pkg && tar -cf - .' | tar -C $C/pkgs -xf -
+ssh root@BOX 'cd /var/lib/pacman/local && tar -cf - --exclude=ALPM_DB_VERSION .' | tar -C $C/localdb -xf -
+ssh root@BOX 'pacman -Q' | sort > $C/ref-pkgs.txt
 ```
 
 Etapas: MiniArch → extrai rootfs (preservando setuid/setgid) → aplica os
@@ -209,7 +222,7 @@ Requisitos locais: `fakeroot`, `debugfs`/`mke2fs` ≥ 1.47, `sfdisk`, `mtools`,
 
 **Box de referência:** SB3000 com a MiniArch + `packaging/install.sh` aplicado
 (é de lá que vem a lista e os arquivos de pacotes). Não limpe o cache do pacman
-dele (`pacman -Scc`) — ou guarde um `--pkg-cache`.
+dele (`pacman -Scc`) antes de preencher o cache local; depois dele, use `--offline`.
 
 ---
 
