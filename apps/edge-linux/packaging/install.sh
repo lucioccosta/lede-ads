@@ -26,6 +26,7 @@ install -Dm755 "$HERE/system/usr/lib/lede-edge/splash" /usr/lib/lede-edge/splash
 install -Dm755 "$HERE/system/usr/lib/lede-edge/session" /usr/lib/lede-edge/session
 install -Dm644 "$HERE/system/etc/systemd/system/lede-splash.service" /etc/systemd/system/lede-splash.service
 install -Dm644 "$HERE/system/etc/modules-load.d/lede-edge.conf" /etc/modules-load.d/lede-edge.conf
+install -Dm644 "$HERE/system/etc/ssh/sshd_config.d/10-lede.conf" /etc/ssh/sshd_config.d/10-lede.conf
 install -Dm644 "$HERE/system/etc/systemd/system/seatd.service.d/lede-early.conf" /etc/systemd/system/seatd.service.d/lede-early.conf
 install -Dm644 "$HERE/system/etc/systemd/system/lede-edge.service" /etc/systemd/system/lede-edge.service
 install -Dm644 "$HERE/system/etc/systemd/network/20-wired.network" /etc/systemd/network/20-wired.network

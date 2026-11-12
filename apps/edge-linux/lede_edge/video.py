@@ -114,7 +114,7 @@ class LoopingVideo:
         self.queue.set_property("max-size-buffers", 4)
         for el in (self.decode, self.queue, self.sink):
             self.pipeline.add(el)
-        self.queue.link(self.sink)
+        self._link_to_sink(self._color_elements())
         self._video_linked = False
         self.decode.connect("pad-added", self._on_pad_added)
 
@@ -122,6 +122,46 @@ class LoopingVideo:
         self._bus.add_signal_watch()
         self._handler = self._bus.connect("message", self._on_message)
         self._released = False
+
+    def _color_elements(self) -> list:
+        """Conversão YUV→RGB na GPU (GstGL) antes do GTK.
+
+        Entregar YUV direto ao GTK 4.24 deixa os escuros lavados: ele converte
+        a curva BT.709 do vídeo para sRGB (Y=26 → 25 em vez de 12; Y=128 →
+        140 em vez de 130), ao contrário do Android/navegadores. Medido no
+        SB3000 com barras 16/26/128/235: direto = 0/24/140/254; GL = 0/10/129/254.
+        Custo: ~+5 pontos de CPU no H.264 1080p por hardware.
+
+        O v4l2sl*dec não informa a faixa (colorimetry 0:3:0:1) → declara
+        BT.709 faixa limitada antes do glupload; sem isso o preto vira 16.
+        Sem GstGL disponível → ligação direta (comportamento anterior).
+        """
+        names = ["glupload", "glcolorconvert", "capsfilter"]
+        els = [Gst.ElementFactory.make(n, None) for n in names]
+        if any(e is None for e in els):
+            log.warning("GstGL indisponível — vídeo direto no GTK (escuros mais claros)")
+            return []
+        els[-1].set_property(
+            "caps", Gst.Caps.from_string("video/x-raw(memory:GLMemory),format=RGBA")
+        )
+        if self.hardware:
+            setter = Gst.ElementFactory.make("capssetter", None)
+            if setter is not None:
+                setter.set_property(
+                    "caps", Gst.Caps.from_string("video/x-raw(memory:DMABuf),colorimetry=bt709")
+                )
+                setter.set_property("join", False)
+                setter.set_property("replace", False)
+                els.insert(0, setter)
+        return els
+
+    def _link_to_sink(self, middle: list):
+        prev = self.queue
+        for el in middle:
+            self.pipeline.add(el)
+            prev.link(el)
+            prev = el
+        prev.link(self.sink)
 
     @staticmethod
     def _skip_hw_decoders(_bin, _pad, _caps, factory):

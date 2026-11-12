@@ -62,7 +62,9 @@ Depois aparece o **logo + código** na TV → aceitar no Cloud (abaixo).
 ### Acesso SSH
 
 Usuário `root`, senha definida no build da imagem (hash SHA-512 na imagem; a
-senha em texto não fica no repositório nem em arquivo). Guarde-a no cofre de
+senha em texto não fica no repositório nem em arquivo). Login do root por senha
+fica explícito em `/etc/ssh/sshd_config.d/10-lede.conf` (`PermitRootLogin yes`,
+`PasswordAuthentication yes`), sem depender do `sshd_config` da MiniArch. Guarde-a no cofre de
 senhas da equipe. Para trocar num box: `passwd`. Para trocar em todas as
 próximas gravações: gerar a imagem de novo com outro `--root-hash`.
 
