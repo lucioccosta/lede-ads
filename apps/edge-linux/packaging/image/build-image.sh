@@ -164,6 +164,7 @@ fr bash -euo pipefail -c '
   install -Dm644 -o 0 -g 0 "$S/etc/systemd/system/seatd.service.d/lede-early.conf" "$R/etc/systemd/system/seatd.service.d/lede-early.conf"
   install -Dm644 -o 0 -g 0 "$S/etc/systemd/system.conf.d/lede-watchdog.conf" "$R/etc/systemd/system.conf.d/lede-watchdog.conf"
   install -Dm644 -o 0 -g 0 "$S/etc/modules-load.d/lede-edge.conf" "$R/etc/modules-load.d/lede-edge.conf"
+  install -Dm644 -o 0 -g 0 "$S/etc/ssh/sshd_config.d/10-lede.conf" "$R/etc/ssh/sshd_config.d/10-lede.conf"
   install -Dm644 -o 0 -g 0 "$S/etc/systemd/network/20-wired.network" "$R/etc/systemd/network/20-wired.network"
   install -Dm644 -o 0 -g 0 "$S/etc/systemd/network/30-halow.network" "$R/etc/systemd/network/30-halow.network"
 ' _ "$ROOTFS" "$PKG" "$HERE/system" "$VER"
@@ -197,6 +198,7 @@ for b in cage imv python3 grim wlr-randr seatd; do [ -x "$ROOTFS/usr/bin/$b" ] |
 [ -e "$ROOTFS/usr/lib/gstreamer-1.0/libgstgtk4.so" ] || fail "falta gtk4paintablesink"
 [ -L "$ROOTFS/etc/systemd/system/multi-user.target.wants/lede-edge.service" ] || fail "lede-edge não habilitado"
 fr stat -c '%a %U' "$ROOTFS/usr/bin/unix_chkpwd" | grep -q '^6755 root' || fail "setuid perdido (unix_chkpwd)"
+grep -q '^PermitRootLogin yes' "$ROOTFS/etc/ssh/sshd_config.d/10-lede.conf" || fail "sshd sem login root por senha"
 grep -q 'IgnorePkg *= *linux-aarch64' "$ROOTFS/etc/pacman.conf" || fail "kernel não está em IgnorePkg"
 du -sh "$ROOTFS" | sed 's/^/   rootfs: /'
 
