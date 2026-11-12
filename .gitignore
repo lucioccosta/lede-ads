@@ -14,6 +14,7 @@ releases/edge/**/*.tar.zst
 releases/edge/**/*.img
 releases/edge/**/*.img.xz
 releases/edge/**/*.img.xz.sha256
+releases/edge/**/pkgcache/
 
 # Env
 .env
