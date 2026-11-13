@@ -106,10 +106,14 @@ def _point(x: float, y: float) -> Graphene.Point:
 class RotatedBin(Gtk.Widget):
     """Rotaciona o filho (orientação do device) sem depender do compositor."""
 
-    def __init__(self):
+    def __init__(self, on_content_size: Callable[[int, int], None] | None = None):
         super().__init__()
         self._child: Gtk.Widget | None = None
         self.degrees = 0
+        # Avisado (fora da alocação) quando o tamanho do conteúdo rotacionado
+        # muda de verdade: 1ª alocação, troca de modo HDMI, troca de orientação.
+        self._on_content_size = on_content_size
+        self._content_size = (0, 0)
 
     def set_child(self, child: Gtk.Widget):
         if self._child:
@@ -141,6 +145,11 @@ class RotatedBin(Gtk.Widget):
         elif d == 270:
             t = t.translate(_point(0, height)).rotate(270)
         self._child.allocate(cw, ch, -1, t)
+        if (cw, ch) != self._content_size and cw > 0 and ch > 0:
+            self._content_size = (cw, ch)
+            if self._on_content_size:
+                # Não redimensiona dentro da alocação: aplica no próximo ciclo
+                GLib.idle_add(lambda: (self._on_content_size(*self._content_size), False)[1])
 
     def do_dispose(self):
         if self._child:
@@ -463,6 +472,41 @@ class Composer:
 # ---------------------------------------------------------------- tarja
 
 
+class ClipBin(Gtk.Widget):
+    """Área dos índices: pede largura mínima 0 e corta o que sobrar.
+
+    Sem isso, uma página mais larga que a faixa elevava o mínimo da tela do
+    player acima da largura disponível e o Gtk.Stack centralizava o conteúdo,
+    cortando as duas pontas da tarja (tag "ÍNDICES" e relógio na borda).
+    """
+
+    def __init__(self, child: Gtk.Widget, on_width: Callable[[int], None]):
+        super().__init__()
+        self._child = child
+        child.set_parent(self)
+        self.set_overflow(Gtk.Overflow.HIDDEN)
+        self._width = 0
+        self._on_width = on_width
+
+    def do_measure(self, orientation, for_size):
+        mn, nat, _, _ = self._child.measure(orientation, for_size)
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            return 0, nat, -1, -1
+        return mn, nat, -1, -1
+
+    def do_size_allocate(self, width, height, baseline):
+        mn, _, _, _ = self._child.measure(Gtk.Orientation.HORIZONTAL, height)
+        self._child.allocate(max(width, mn), height, -1, None)
+        if width != self._width:
+            self._width = width
+            GLib.idle_add(lambda: (self._on_width(self._width), False)[1])
+
+    def do_dispose(self):
+        if self._child:
+            self._child.unparent()
+            self._child = None
+
+
 class TickerSlot(Gtk.Overlay):
     """Faixa inferior sempre reservada; mostra a tarja ou só o badge do código."""
 
@@ -483,7 +527,8 @@ class TickerSlot(Gtk.Overlay):
         self.tag = Gtk.Label(label="ÍNDICES")
         self.tag.add_css_class("tag")
         self.items_box = Gtk.Box(spacing=0)
-        self.items_box.set_hexpand(True)
+        self.items_area = ClipBin(self.items_box, lambda _w: self._repaginate())
+        self.items_area.set_hexpand(True)
         self.logo = FixedTexture()
         self.logo.set_valign(Gtk.Align.FILL)
         self.logo.set_margin_start(6)
@@ -491,7 +536,7 @@ class TickerSlot(Gtk.Overlay):
         self.code_label.add_css_class("code")
         self.clock = Gtk.Label(label="00:00")
         self.clock.add_css_class("clock")
-        for w in (self.tag, self.items_box, self.logo, self.code_label, self.clock):
+        for w in (self.tag, self.items_area, self.logo, self.code_label, self.clock):
             self.bar.append(w)
 
         self.badge = Gtk.Label()
@@ -508,6 +553,9 @@ class TickerSlot(Gtk.Overlay):
         )
         self._scale_px = 0
         self._repaginate_pending = False
+        # Já nasce com tamanho/fontes/margens de 1080p; a janela reaplica pela
+        # altura real assim que o conteúdo rotacionado tiver tamanho.
+        self.apply_height(TICKER_BAR_DP)
         GLib.timeout_add_seconds(1, self._tick_clock)
         GLib.timeout_add(TICKER_PAGE_MS, self._next_page)
 
@@ -543,7 +591,7 @@ class TickerSlot(Gtk.Overlay):
         # padding via CSS no .ticker não era respeitado e o texto colava na borda.
         self.tag.set_margin_start(int(12 * f))
         self.clock.set_margin_end(int(12 * f))
-        self.items_box.set_margin_start(int(4 * f))
+        self.items_area.set_margin_start(int(4 * f))
         self.logo.set_margin_start(int(6 * f))
         self.code_label.set_margin_start(int(8 * f))
         self.clock.set_margin_start(int(8 * f))
@@ -613,7 +661,7 @@ class TickerSlot(Gtk.Overlay):
     def _repaginate(self):
         if not self.bar.get_visible():
             return  # show_payload repagina quando a tarja aparecer
-        avail = self.items_box.get_width()
+        avail = self.items_area.get_width()
         if avail <= 0:
             # Ainda sem alocação (tarja recém-exibida ou tela do player oculta).
             # Antes era um idle_add que se reagendava a cada iteração do main
@@ -759,7 +807,7 @@ class PlayerWindow(Gtk.ApplicationWindow):
         self.set_cursor_from_name("none")
         self.set_decorated(False)
 
-        self.rotated = RotatedBin()
+        self.rotated = RotatedBin(on_content_size=self._on_content_size)
         self.set_child(self.rotated)
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
@@ -797,24 +845,17 @@ class PlayerWindow(Gtk.ApplicationWindow):
         keys.connect("key-pressed", self._on_key)
         self.add_controller(keys)
 
-        self.connect("notify::default-height", lambda *_: self._resize_ticker())
-        self.rotated.connect("notify::height", lambda *_: self._resize_ticker())
-        GLib.timeout_add(500, self._resize_ticker_once)
 
     # ---- tamanho da tarja (proporcional à altura do conteúdo rotacionado)
 
-    def _content_height(self) -> int:
-        w, h = self.get_width(), self.get_height()
-        return w if self.rotated.degrees in (90, 270) else h
-
-    def _resize_ticker(self):
-        h = self._content_height()
-        if h > 0:
-            self.ticker.apply_height(round(h * TICKER_BAR_DP / TICKER_REF_HEIGHT))
-
-    def _resize_ticker_once(self):
-        self._resize_ticker()
-        return GLib.SOURCE_REMOVE
+    def _on_content_size(self, width: int, height: int):
+        # Chamado pelo RotatedBin sempre que o conteúdo (já rotacionado) muda
+        # de tamanho. Antes dependia de notify::default-height (não muda em
+        # fullscreen), notify::height (não existe no GTK4) e de um timer de
+        # 500 ms: no boot lento nenhum acertava e a tarja ficava sem escala.
+        px = round(height * TICKER_BAR_DP / TICKER_REF_HEIGHT)
+        log.info("Tela %dx%d (rotação %d°) → tarja %dpx", width, height, self.rotated.degrees, px)
+        self.ticker.apply_height(px)
 
     # ---- View
 
@@ -852,7 +893,6 @@ class PlayerWindow(Gtk.ApplicationWindow):
 
     def set_orientation(self, orientation: str):
         self.rotated.set_degrees(ORIENTATION_DEGREES.get(orientation, 0))
-        GLib.idle_add(self._resize_ticker_once)
 
     def set_clock_timezone(self, tz: str):
         self.ticker.set_timezone(tz)
