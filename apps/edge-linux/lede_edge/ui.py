@@ -507,6 +507,7 @@ class TickerSlot(Gtk.Overlay):
             Gdk.Display.get_default(), self._css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
         )
         self._scale_px = 0
+        self._repaginate_pending = False
         GLib.timeout_add_seconds(1, self._tick_clock)
         GLib.timeout_add(TICKER_PAGE_MS, self._next_page)
 
@@ -522,7 +523,6 @@ class TickerSlot(Gtk.Overlay):
         f = px / 36.0
         self._css.load_from_string(
             f"""
-            .ticker {{ padding: 0 {int(10 * f)}px 0 {int(8 * f)}px; }}
             .ticker .tag {{ font-size: {9 * f:.1f}px; }}
             .ticker .item-icon {{ font-size: {13 * f:.1f}px; }}
             .ticker .item-label {{ font-size: {9 * f:.1f}px; }}
@@ -538,7 +538,11 @@ class TickerSlot(Gtk.Overlay):
             _asset("lede_logo_dark.png"), int(64 * f), max(8, px - int(2 * f)), True
         )
         self.logo.set_texture(Gdk.Texture.new_for_pixbuf(pix), pix.get_width(), pix.get_height())
-        # Margens do activity_player.xml (dp → px pela escala da faixa)
+        # Margens do activity_player.xml (dp → px pela escala da faixa).
+        # As laterais da faixa vão como margem dos widgets das pontas: o
+        # padding via CSS no .ticker não era respeitado e o texto colava na borda.
+        self.tag.set_margin_start(int(12 * f))
+        self.clock.set_margin_end(int(12 * f))
         self.items_box.set_margin_start(int(4 * f))
         self.logo.set_margin_start(int(6 * f))
         self.code_label.set_margin_start(int(8 * f))
@@ -607,10 +611,16 @@ class TickerSlot(Gtk.Overlay):
         return box
 
     def _repaginate(self):
+        if not self.bar.get_visible():
+            return  # show_payload repagina quando a tarja aparecer
         avail = self.items_box.get_width()
         if avail <= 0:
-            # Ainda sem alocação — tenta após o próximo frame
-            GLib.idle_add(lambda: (self._repaginate(), False)[1])
+            # Ainda sem alocação (tarja recém-exibida ou tela do player oculta).
+            # Antes era um idle_add que se reagendava a cada iteração do main
+            # loop: com a faixa sem largura isso girava a 100% de CPU sem fim.
+            if not self._repaginate_pending:
+                self._repaginate_pending = True
+                GLib.timeout_add(250, self._repaginate_retry)
             return
         pages: list[list[dict[str, Any]]] = []
         cur: list[dict[str, Any]] = []
@@ -627,6 +637,11 @@ class TickerSlot(Gtk.Overlay):
         self.pages = pages
         self.page = 0
         self._show_page()
+
+    def _repaginate_retry(self):
+        self._repaginate_pending = False
+        self._repaginate()
+        return GLib.SOURCE_REMOVE
 
     def _show_page(self):
         child = self.items_box.get_first_child()

@@ -147,7 +147,11 @@ fr bash -euo pipefail -c '
   rm -f "$R"/etc/ssh/ssh_host_* "$R"/var/log/*.log "$R/var/log/btmp" "$R/var/log/wtmp" "$R/var/log/lastlog"
   rm -rf "$R"/var/log/journal/* "$R"/var/cache/pacman/pkg/* "$R"/root/.bash_history "$R"/root/.ssh
   mkdir -p "$R/var/lib/lede-edge/media" "$R/var/lib/lede-edge/ota"
-  awk -v h="$H" "BEGIN{FS=OFS=\":\"} \$1==\"root\"{\$2=h} {print}" "$R/etc/shadow" > "$R/etc/shadow.new"
+  # Senha do root + "última troca" = hoje e sem expiração: com lastchg 0 o
+  # PAM exige troca de senha no primeiro login e o SSH por senha falha.
+  awk -v h="$H" -v d="$(( $(date +%s) / 86400 ))" \
+    "BEGIN{FS=OFS=\":\"} \$1==\"root\"{\$2=h; \$3=d; \$5=\"\"; \$7=\"\"; \$8=\"\"} {print}" \
+    "$R/etc/shadow" > "$R/etc/shadow.new"
   cat "$R/etc/shadow.new" > "$R/etc/shadow"; rm -f "$R/etc/shadow.new"
 ' _ "$ROOTFS" "$ROOT_HASH"
 
@@ -165,6 +169,13 @@ fr bash -euo pipefail -c '
   install -Dm644 -o 0 -g 0 "$S/etc/systemd/system.conf.d/lede-watchdog.conf" "$R/etc/systemd/system.conf.d/lede-watchdog.conf"
   install -Dm644 -o 0 -g 0 "$S/etc/modules-load.d/lede-edge.conf" "$R/etc/modules-load.d/lede-edge.conf"
   install -Dm644 -o 0 -g 0 "$S/etc/ssh/sshd_config.d/10-lede.conf" "$R/etc/ssh/sshd_config.d/10-lede.conf"
+  # O drop-in só vale se o sshd_config o incluir antes das próprias opções
+  # (no sshd vale o primeiro valor); garante o Include no topo.
+  if ! awk "/^[[:space:]]*#/ || /^[[:space:]]*\$/ {next} {print; exit}" "$R/etc/ssh/sshd_config" \
+      | grep -qE "^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf"; then
+    { echo "Include /etc/ssh/sshd_config.d/*.conf"; cat "$R/etc/ssh/sshd_config"; } > "$R/etc/ssh/sshd_config.new"
+    cat "$R/etc/ssh/sshd_config.new" > "$R/etc/ssh/sshd_config"; rm -f "$R/etc/ssh/sshd_config.new"
+  fi
   install -Dm644 -o 0 -g 0 "$S/etc/systemd/network/20-wired.network" "$R/etc/systemd/network/20-wired.network"
   install -Dm644 -o 0 -g 0 "$S/etc/systemd/network/30-halow.network" "$R/etc/systemd/network/30-halow.network"
 ' _ "$ROOTFS" "$PKG" "$HERE/system" "$VER"
@@ -199,6 +210,12 @@ for b in cage imv python3 grim wlr-randr seatd; do [ -x "$ROOTFS/usr/bin/$b" ] |
 [ -L "$ROOTFS/etc/systemd/system/multi-user.target.wants/lede-edge.service" ] || fail "lede-edge não habilitado"
 fr stat -c '%a %U' "$ROOTFS/usr/bin/unix_chkpwd" | grep -q '^6755 root' || fail "setuid perdido (unix_chkpwd)"
 grep -q '^PermitRootLogin yes' "$ROOTFS/etc/ssh/sshd_config.d/10-lede.conf" || fail "sshd sem login root por senha"
+grep -qE '^PasswordAuthentication yes' "$ROOTFS/etc/ssh/sshd_config.d/10-lede.conf" || fail "sshd sem autenticação por senha"
+awk '/^[[:space:]]*#/ || /^[[:space:]]*$/ {next} {print; exit}' "$ROOTFS/etc/ssh/sshd_config" \
+  | grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' \
+  || fail "sshd_config não inclui sshd_config.d/ antes das próprias opções"
+fr awk -F: -v h="$ROOT_HASH" '$1=="root" && $2==h && $3>0 {ok=1} END{exit !ok}' "$ROOTFS/etc/shadow" \
+  || fail "senha root não aplicada (ou expirada) no /etc/shadow"
 grep -q 'IgnorePkg *= *linux-aarch64' "$ROOTFS/etc/pacman.conf" || fail "kernel não está em IgnorePkg"
 du -sh "$ROOTFS" | sed 's/^/   rootfs: /'
 

@@ -7,7 +7,7 @@ Documentation=https://github.com/lucioccosta/lede-ads/tree/main/apps/edge-linux
 # lento levam ~20 s. Só precisa da raiz montada, do journal e do seatd.
 DefaultDependencies=no
 Wants=seatd.service
-After=seatd.service systemd-remount-fs.service systemd-journald.socket lede-splash.service lede-firstboot.service
+After=seatd.service systemd-modules-load.service systemd-remount-fs.service systemd-journald.socket lede-splash.service lede-firstboot.service
 Before=shutdown.target
 Conflicts=shutdown.target
 # Ocupa o tty1 no lugar do login de console
