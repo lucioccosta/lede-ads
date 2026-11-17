@@ -36,7 +36,12 @@ object ApkUpdateInstaller {
         .followSslRedirects(true)
         .build()
 
+    /**
+     * Device Owner instala via PackageInstaller session e não precisa da permissão
+     * "apps desconhecidos"; só o caminho por Intent (sem DO) depende dela.
+     */
     fun canInstallPackages(context: Context): Boolean {
+        if (KioskPolicy.isDeviceOwner(context)) return true
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.packageManager.canRequestPackageInstalls()
         } else {
