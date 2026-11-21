@@ -179,6 +179,34 @@ Screenshot manual (dentro da sessão): o Cloud tem o botão **Screenshot**.
 
 ## Gerar a imagem
 
+### Pelo GitHub Actions (padrão)
+
+O workflow **Edge SB3000 Linux Release** gera o pacote OTA **e** a imagem, e
+anexa `lede-edge-sb3000-linux-vX.Y.Z.img.xz` + `.sha256` na release
+`edge-sb3000-linux-vX.Y.Z` (download em *Releases* no GitHub). Dispara com a
+tag `edge-sb3000-linux-vX.Y.Z` ou em *Actions → Run workflow* (opção
+`build_image`).
+
+Pré-requisitos (uma vez):
+
+1. Secret do repositório `EDGE_LINUX_ROOT_HASH` = saída de `openssl passwd -6`.
+2. Insumos na pre-release `edge-sb3000-linux-image-inputs` (MiniArch + cache de
+   pacotes). Publicar/atualizar a partir da máquina que tem o cache:
+
+   ```bash
+   apps/edge-linux/packaging/image/publish-build-inputs.sh \
+     --base ~/MiniArch-15.4.0-05.08.2026-7.3.1-board-h313.x96_q_lpddr3-SD-Image.img.xz
+   ```
+
+   Repita depois de um build online local que trouxe pacotes novos do box de
+   referência (o CI sempre usa `--offline`).
+
+O repositório é público: a imagem (com o hash da senha root) fica disponível
+para qualquer um. Use uma senha root forte. A `enrollment_key` **não** é
+colocada pela action, para não vazar a chave numa imagem pública.
+
+### Localmente
+
 Roda na **máquina de build** (x86, sem root): `fakeroot` + `debugfs` +
 `mke2fs -d` + `mtools`. Nada é executado no box de referência — dele só se leem
 os pacotes Arch ARM que faltam na MiniArch (cache do pacman, já verificados) e
