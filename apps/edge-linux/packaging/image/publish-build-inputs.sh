@@ -31,7 +31,8 @@ NOTES="Insumos do build da imagem do SD do Edge Linux (não é uma versão do ap
 gh release view "$TAG" >/dev/null 2>&1 \
   || gh release create "$TAG" --prerelease --title "Edge Linux — insumos da imagem" --notes "$NOTES" --target main
 # Uma MiniArch só: remove bases antigas com outro nome
-gh release view "$TAG" --json assets -q '.assets[].name' | grep '^MiniArch-.*\.img\.xz$' \
-  | grep -vxF "$(basename "$BASE")" | while read -r old; do gh release delete-asset "$TAG" "$old" -y; done
+old_bases="$(gh release view "$TAG" --json assets -q '.assets[].name' \
+  | grep '^MiniArch-.*\.img\.xz$' | grep -vxF "$(basename "$BASE")" || true)"
+for old in $old_bases; do gh release delete-asset "$TAG" "$old" -y; done
 gh release upload "$TAG" "$BASE" "$WORK/edge-linux-pkgcache.tar" --clobber
 echo "OK: insumos publicados em $TAG"
