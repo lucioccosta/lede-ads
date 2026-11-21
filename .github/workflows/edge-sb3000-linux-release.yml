@@ -1,7 +1,16 @@
 # Empacota e publica o Edge Linux (SB3000 com Arch no SD) nas GitHub Releases (OTA).
 #
-# Artefato: lede-edge-sb3000-linux-vX.Y.Z.tar.zst  (VERSION + lede_edge/)
-# O Cloud classifica esse asset como target `sb3000-linux` (flavor `linux`).
+# Artefatos:
+#   lede-edge-sb3000-linux-vX.Y.Z.tar.zst          pacote OTA (VERSION + lede_edge/)
+#   lede-edge-sb3000-linux-vX.Y.Z.img.xz (+.sha256) imagem do SD para gravar
+# O Cloud classifica só o .tar.zst (target `sb3000-linux`, flavor `linux`).
+#
+# A imagem é gerada com build-image.sh --offline. Os insumos ficam na release
+# `edge-sb3000-linux-image-inputs` (pre-release; publicar com
+# apps/edge-linux/packaging/image/publish-build-inputs.sh):
+#   MiniArch-*.img.xz           imagem base oficial
+#   edge-linux-pkgcache.tar     pkgs/ + localdb/ + ref-pkgs.txt
+# Secret obrigatório: EDGE_LINUX_ROOT_HASH  (openssl passwd -6)
 #
 # Disparos:
 #   1) Push de tag  edge-sb3000-linux-vX.Y.Z  (deve bater com apps/edge-linux/VERSION)
@@ -19,6 +28,10 @@ on:
         description: "Publicar GitHub Release com o pacote"
         type: boolean
         default: true
+      build_image:
+        description: "Gerar a imagem do SD (.img.xz)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -32,6 +45,10 @@ jobs:
     name: Package Edge Linux
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      pkg: ${{ steps.ver.outputs.pkg }}
 
     steps:
       - name: Checkout
@@ -89,3 +106,83 @@ jobs:
           else
             gh release create "$TAG" "$PKG" --title "Edge SB3000 Linux v${VER}" --notes "$NOTES" --target "$GITHUB_SHA"
           fi
+
+  image:
+    name: SD image
+    needs: package
+    if: ${{ github.event_name == 'push' || inputs.build_image }}
+    runs-on: ubuntu-24.04          # e2fsprogs >= 1.47 (mke2fs -d)
+    timeout-minutes: 60
+    env:
+      INPUTS_TAG: edge-sb3000-linux-image-inputs
+      PKG: ${{ needs.package.outputs.pkg }}
+      TAG: ${{ needs.package.outputs.tag }}
+      VER: ${{ needs.package.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check secret
+        env:
+          ROOT_HASH: ${{ secrets.EDGE_LINUX_ROOT_HASH }}
+        run: |
+          case "$ROOT_HASH" in '$6$'*) ;; *)
+            echo "::error::Secret EDGE_LINUX_ROOT_HASH ausente ou inválido (gere com: openssl passwd -6)"
+            exit 1 ;;
+          esac
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            fakeroot e2fsprogs fdisk mtools zstd xz-utils ffmpeg python3
+
+      - name: Download OTA package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PKG }}
+          path: build/pkg
+
+      - name: Download build inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/inputs build/pkgcache
+          gh release download "$INPUTS_TAG" -D build/inputs \
+            -p 'MiniArch-*.img.xz' -p 'edge-linux-pkgcache.tar'
+          ls -la build/inputs
+          tar -C build/pkgcache -xf build/inputs/edge-linux-pkgcache.tar
+          rm -f build/inputs/edge-linux-pkgcache.tar
+          echo "BASE=$(ls build/inputs/MiniArch-*.img.xz | head -1)" >> "$GITHUB_ENV"
+
+      - name: Build image
+        env:
+          ROOT_HASH: ${{ secrets.EDGE_LINUX_ROOT_HASH }}
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" apps/edge-linux/packaging/image/build-image.sh \
+            --base "$BASE" \
+            --package "build/pkg/$PKG" \
+            --pkg-cache build/pkgcache --offline \
+            --out build/out \
+            --root-hash "$ROOT_HASH"
+          ls -la build/out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lede-edge-sb3000-linux-v${{ env.VER }}.img.xz
+          path: build/out/lede-edge-sb3000-linux-v${{ env.VER }}.img.xz*
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" build/out/lede-edge-sb3000-linux-v${VER}.img.xz \
+            build/out/lede-edge-sb3000-linux-v${VER}.img.xz.sha256 --clobber
